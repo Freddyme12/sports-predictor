@@ -390,31 +390,52 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
   };
 
   const fetchGames = async () => {
-    if (!apiKey.trim()) {
-      setError("Please enter your The Odds API key.");
-      return;
-    }
-
     setLoading(true);
     setError("");
     setGames([]);
 
     try {
-      const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
-      const response = await fetch(url);
+      let gamesWithIds = [];
 
-      if (!response.ok) throw new Error(response.status === 401 ? "Invalid API key." : `Error: ${response.status}`);
+      // Try Odds API if key provided
+      if (apiKey.trim()) {
+        try {
+          const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
+          const response = await fetch(url);
 
-      const data = await response.json();
-      if (!data || data.length === 0) {
-        setError("No games found.");
-        return;
+          if (!response.ok) throw new Error(response.status === 401 ? "Invalid API key." : `Error: ${response.status}`);
+
+          const data = await response.json();
+          if (data && data.length > 0) {
+            gamesWithIds = data.map((game, index) => ({
+              ...game,
+              id: game.id || `${game.sport_key}_${index}`
+            }));
+          }
+        } catch (apiError) {
+          console.error("Odds API error:", apiError);
+          setError(`Odds API unavailable. Using dataset games only. (${apiError.message})`);
+        }
       }
 
-      const gamesWithIds = data.map((game, index) => ({
-        ...game,
-        id: game.id || `${game.sport_key}_${index}`
-      }));
+      // Fallback to dataset games if no API key or API failed
+      if (gamesWithIds.length === 0 && parsedDataset?.games) {
+        setError("No Odds API key provided. Loading games from dataset only.");
+        gamesWithIds = parsedDataset.games.map((game, index) => ({
+          id: game.game_id || `dataset_${index}`,
+          sport_key: selectedSport,
+          sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
+          commence_time: game.kickoff_local || new Date().toISOString(),
+          home_team: game.teams?.home || 'Unknown',
+          away_team: game.teams?.away || 'Unknown',
+          bookmakers: [] // No odds data from dataset
+        }));
+      }
+
+      if (gamesWithIds.length === 0) {
+        setError("No games found. Please provide either an Odds API key or load a dataset with games.");
+        return;
+      }
 
       setGames(gamesWithIds);
 
@@ -583,9 +604,15 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             </select>
           </div>
 
-          <button onClick={fetchGames} disabled={loading} style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
+          <button onClick={fetchGames} disabled={loading || (!apiKey.trim() && !parsedDataset)} style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || (!apiKey.trim() && !parsedDataset)) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
             {loading ? "Loading..." : "Fetch Games"}
           </button>
+          
+          {!apiKey.trim() && (
+            <div style={{ marginTop: "10px", fontSize: "13px", color: "#666" }}>
+              💡 Tip: Odds API key is optional. You can load games from your dataset alone, or provide an API key for live betting lines.
+            </div>
+          )}
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
