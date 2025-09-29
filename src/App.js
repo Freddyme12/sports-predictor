@@ -355,16 +355,23 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     const espnSport = sportMap[sport] || 'nfl';
     const teamAbbr = getTeamAbbreviation(teamName, espnSport);
     
-    // Use your Vercel API endpoint instead of ESPN directly
+    // Use Vercel serverless function proxy
     const baseUrl = window.location.hostname === 'localhost' 
       ? 'http://localhost:3000' 
-      : `https://${window.location.hostname}`;
+      : window.location.origin;
+    
+    const espnPath = espnSport === 'nfl' ? 'football/nfl' : espnSport;
     
     const injuryResponse = await fetch(
-      `${baseUrl}/api/espn-proxy?sport=${espnSport === 'nfl' ? 'football/nfl' : espnSport}&team=${teamAbbr}&type=news`
+      `${baseUrl}/api/espn-proxy?sport=${espnPath}&team=${teamAbbr}`
     );
 
-    const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
+    if (!injuryResponse.ok) {
+      console.error('ESPN proxy failed:', injuryResponse.status);
+      return null;
+    }
+
+    const newsData = await injuryResponse.json();
     const injuries = newsData?.articles?.filter((article) => 
       article.headline.toLowerCase().includes('injury') || 
       article.headline.toLowerCase().includes('out') ||
@@ -373,7 +380,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
 
     return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
   } catch (error) {
-    console.error('ESPN proxy error:', error);
+    console.error('ESPN fetch error:', error);
     return null;
   }
 };
