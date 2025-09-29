@@ -448,8 +448,15 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
         ]).then(([homeData, awayData]) => {
           setEspnDataCache(prev => ({
             ...prev,
-            [game.id]: { home: homeData, away: awayData, fetchedAt: new Date().toISOString() }
+            [game.id]: { 
+              home: homeData, 
+              away: awayData, 
+              fetchedAt: new Date().toISOString(),
+              status: (homeData?.injuries?.length > 0 || awayData?.injuries?.length > 0) ? 'success' : 'limited'
+            }
           }));
+        }).catch(err => {
+          console.log('ESPN API unavailable (CORS blocked):', err);
         });
       }
     } catch (err) {
@@ -581,6 +588,33 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>Configuration</h2>
+          
+          {/* Data Source Status */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", marginBottom: "20px" }}>
+            <div style={{ padding: "10px", backgroundColor: parsedDataset ? "#d4edda" : "#f8f9fa", border: `1px solid ${parsedDataset ? "#28a745" : "#dee2e6"}`, borderRadius: "4px" }}>
+              <div style={{ fontSize: "11px", color: "#666" }}>Dataset</div>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: parsedDataset ? "#155724" : "#6c757d" }}>
+                {parsedDataset ? `✓ ${parsedDataset.games?.length || 0} games` : "Not loaded"}
+              </div>
+            </div>
+            <div style={{ padding: "10px", backgroundColor: apiKey.trim() ? "#d4edda" : "#f8f9fa", border: `1px solid ${apiKey.trim() ? "#28a745" : "#dee2e6"}`, borderRadius: "4px" }}>
+              <div style={{ fontSize: "11px", color: "#666" }}>Odds API</div>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: apiKey.trim() ? "#155724" : "#6c757d" }}>
+                {apiKey.trim() ? "✓ Configured" : "Optional"}
+              </div>
+            </div>
+            <div style={{ padding: "10px", backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: "4px" }}>
+              <div style={{ fontSize: "11px", color: "#666" }}>ESPN API</div>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#856404" }}>
+                ⚠ CORS blocked
+              </div>
+            </div>
+          </div>
+
+          <div style={{ backgroundColor: "#fff3cd", padding: "12px", borderRadius: "6px", marginBottom: "15px", fontSize: "12px", color: "#856404" }}>
+            <strong>Note:</strong> ESPN API is blocked by browser CORS restrictions. Injury data requires a backend proxy (not included in this demo). System works with Dataset + Odds API.
+          </div>
+          
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
