@@ -349,28 +349,34 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     }
   };
 
-  const fetchESPNData = async (teamName, sport) => {
-    try {
-      const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
-      const espnSport = sportMap[sport] || 'nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, espnSport);
-      
-      const injuryResponse = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/${espnSport === 'nfl' ? 'football/nfl' : espnSport}/news?limit=50&team=${teamAbbr}`
-      );
+ const fetchESPNData = async (teamName, sport) => {
+  try {
+    const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
+    const espnSport = sportMap[sport] || 'nfl';
+    const teamAbbr = getTeamAbbreviation(teamName, espnSport);
+    
+    // Use your Vercel API endpoint instead of ESPN directly
+    const baseUrl = window.location.hostname === 'localhost' 
+      ? 'http://localhost:3000' 
+      : `https://${window.location.hostname}`;
+    
+    const injuryResponse = await fetch(
+      `${baseUrl}/api/espn-proxy?sport=${espnSport === 'nfl' ? 'football/nfl' : espnSport}&team=${teamAbbr}&type=news`
+    );
 
-      const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
-      const injuries = newsData?.articles?.filter((article) => 
-        article.headline.toLowerCase().includes('injury') || 
-        article.headline.toLowerCase().includes('out') ||
-        article.headline.toLowerCase().includes('questionable')
-      ).slice(0, 5) || [];
+    const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
+    const injuries = newsData?.articles?.filter((article) => 
+      article.headline.toLowerCase().includes('injury') || 
+      article.headline.toLowerCase().includes('out') ||
+      article.headline.toLowerCase().includes('questionable')
+    ).slice(0, 5) || [];
 
-      return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
-    } catch (error) {
-      return null;
-    }
-  };
+    return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
+  } catch (error) {
+    console.error('ESPN proxy error:', error);
+    return null;
+  }
+};
 
   const getTeamAbbreviation = (teamName, sport) => {
     const nflTeams = {
