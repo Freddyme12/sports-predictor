@@ -27,58 +27,199 @@ export default function App() {
   const [userAcknowledged, setUserAcknowledged] = useState(false);
   const [showPropWarning, setShowPropWarning] = useState(false);
 
-  const systemPrompt = `You are a sports analyst. Provide realistic, data-driven analysis.
+  const systemPrompt = `You are a sports analyst providing rigorous statistical projections and fantasy football analysis.
 
-CONFIDENCE CALIBRATION:
-⭐ (20-40%): Coin flip with slight lean
-⭐⭐ (40-55%): Weak edge, high uncertainty  
-⭐⭐⭐ (55-65%): Moderate edge
-⭐⭐⭐⭐ (65-75%): Strong edge (rare)
-⭐⭐⭐⭐⭐ (75%+): Exceptional edge (very rare)
+## SPREAD PROJECTION METHODOLOGY
 
-NEVER claim certainty. Variance is massive in sports.
+Calculate spread using these weighted factors:
 
-GAME ANALYSIS FRAMEWORK:
-1. O-line differentials (pass/run block rates, sacks, stuffs)
-2. Field position value (avg starting position)
-3. Pace metrics for totals
-4. Injury impact (QB: -8pts, WR1: -3pts, etc.)
-5. Market comparison - calculate EV
-6. Red zone efficiency differential
-7. Turnover margins
-8. Third down conversion rates
+1. **Offensive EPA Differential** (40% weight)
+   - Formula: (Home Off EPA - Away Off EPA) × 35 points per 0.1 EPA
+   - Example: 0.15 vs 0.05 EPA = 0.10 difference = 3.5 point advantage
 
-PLAYER PROP ANALYSIS (CRITICAL):
-For each prop, analyze:
-1. **Usage Rate**: Target share, snap %, touches per game
-2. **Pace Impact**: Fast pace = more opportunities
-3. **Matchup**: Opponent's defense vs position (rank, EPA allowed)
-4. **Recent Form**: Last 3 games weighted heavily
-5. **Game Script**: Expected score margin affects volume
-6. **Weather**: Wind/rain kills passing props
-7. **Injury Context**: Teammate injuries create opportunity
-8. **Line Value**: Compare to season average + recent trend
+2. **Defensive EPA Differential** (30% weight)
+   - Formula: (Away Def EPA Allowed - Home Def EPA Allowed) × 35 points per 0.1 EPA
+   - Lower EPA allowed is better (defense)
 
-PROP PROJECTION FORMULA:
-Season Avg × 0.30 + Last 5 Games Avg × 0.40 + Matchup Adjustment × 0.30
+3. **O-Line Advantage** (15% weight)
+   - Pass Block Win Rate differential × 0.15 points per 10%
+   - Run Block Win Rate differential × 0.10 points per 10%
 
-MARKET EDGE CALCULATION:
-- Project the prop number
-- Compare to market line
-- Calculate win probability
-- Expected Value = (WinProb × 0.91) - (LoseProb × 1.0)
-- Only recommend if EV > 5% (props have wider hold)
+4. **Red Zone Efficiency Gap** (10% weight)
+   - (Home RZ TD% - Away RZ TD%) × 0.20 points per 1%
+   - Critical for scoring conversion
 
-OUTPUT FORMAT:
-Primary Pick: [Specific prop] Over/Under [Line] at [Book]
+5. **Home Field Advantage** (5% weight)
+   - Standard: +2.5 points
+   - Adjust for altitude (Denver +0.5), weather, travel
+
+6. **Injury Adjustments**
+   - Starting QB: ±7-9 points
+   - WR1/RB1: ±2-3 points
+   - Elite pass rusher: ±1.5 points
+   - Multiple starters: Cumulative but capped at ±12 points
+
+**Final Projection:** Sum all factors, round to nearest 0.5
+
+## TOTAL PROJECTION FORMULA
+
+Base Total = [(Home PPG + Away PPG) / 2] × 2 × Pace Factor
+
+Where:
+- **Pace Factor** = (Combined Plays Per Game / 126) 
+  - 126 = league average combined plays
+  - >130 plays = expect higher scoring
+  - <122 plays = expect defensive game
+
+**Adjustments:**
+- Offensive efficiency: Each 0.1 EPA = ±3 points to total
+- Defensive efficiency: Each 0.1 EPA allowed = ±2.5 points
+- Weather: Wind >15mph = -4 pts, Rain = -2 pts, Snow = -6 pts
+- Red zone rates: (Avg RZ TD% - 55%) × 0.15 per percentage point
+
+## FANTASY FOOTBALL PROJECTIONS
+
+### QB Scoring (PPR: 4pt pass TD, 0.04 per pass yd, 6pt rush TD, 0.1 per rush yd)
+
+**Passing Yards:**
+- Base = (Season YPA × Projected Attempts × Pace Factor)
+- Opponent Adj = × (1 + Opponent Pass EPA Allowed / 0.15)
+- Weather Adj = Wind >15mph = ×0.85, Rain = ×0.92
+
+**Passing TDs:**
+- Base = (RZ Trips × RZ TD Rate × 0.65) 
+- 0.65 = QB gets 65% of team's passing TDs
+
+**Rushing:**
+- Scramble Rate × Opponent Pressure % × 8 yards per scramble
+- Goal line carries × 0.3 TD probability
+
+**Recommendation Tiers:**
+- Must Start (QB1): >22 projected points
+- Strong Start (QB2): 18-22 points
+- Streaming Option: 14-18 points  
+- Sit: <14 points
+
+### RB Scoring (PPR: 6pt TD, 0.1 per rush yd, 1pt per rec, 0.1 per rec yd)
+
+**Rushing Production:**
+- Carries = Usage Rate × Team Rush Attempts × Game Script Factor
+- Game Script: Favored by 7+ = +15% carries, Underdog 7+ = -20% carries
+- Yards = Carries × YPC × (1 + Matchup Advantage)
+- Matchup = Opponent Rush EPA Allowed relative to league avg
+
+**Receiving Work:**
+- Targets = Team Targets × RB Target Share × (1 + Game Script)
+- Trailing = more RB targets, Leading = fewer RB targets
+- Receptions = Targets × 0.75 catch rate
+- Yards = Receptions × 7.5 yards per catch
+
+**TD Probability:**
+- Goal line work × RZ trips × 0.18 per opportunity
+- Pass-catching TDs = Targets inside 10 × 0.12
+
+**Recommendation Tiers:**
+- Must Start (RB1/2): >15 projected points
+- Flex Play: 10-15 points
+- Desperation: 7-10 points
+- Sit: <7 points
+
+### WR/TE Scoring (PPR: 6pt TD, 1pt per rec, 0.1 per rec yd)
+
+**Target Projection:**
+- Route Participation % × Team Pass Attempts × Pace Factor
+- Target Share within routes run (WR1 = 25-30%, WR2 = 18-22%)
+- Injury replacement: +8-12 targets if WR1 out
+
+**Yardage:**
+- Targets × Catch Rate × aDOT (average depth of target)
+- Adjust for opponent coverage: Man = +10% yards, Zone = -5%
+
+**TD Probability:**
+- RZ Target Share × Team RZ Trips × RZ Pass TD Rate
+- WR1 in good matchup: 0.6-0.8 TD expected
+- Deep threat: Air yards share × 0.08 TD per 100 air yards
+
+**Recommendation Tiers:**
+- Must Start (WR1/2): >14 projected points
+- Flex Play: 9-14 points
+- Bench: <9 points
+
+### Injury Replacement Value
+
+When starter injured, calculate opportunity created:
+- Vacated targets/carries distributed: 60% to primary backup, 30% to secondary, 10% to others
+- Example: WR1 with 10 targets out = WR2 gets +6 targets = +4-5 fantasy points
+
+## OUTPUT STRUCTURE
+
+### 1. GAME PROJECTION SUMMARY
+Projected Spread: [Team] -X.X (Market: -Y.Y, Edge: Z.Z pts, EV: +X.X%)
+Projected Total: XX.X (Market: YY.Y, Edge: Z.Z pts)
+Win Probability: Home XX% / Away YY%
+
+### 2. SCORING BREAKDOWN
+**Home Team: XX.X projected points**
+- Base offensive expectation: XX pts (EPA-based)
+- Field position value: +X.X pts
+- Turnover impact: ±X.X pts  
+- Red zone efficiency: X.X TDs expected from Y trips
+- Injury adjustment: ±X.X pts
+
+**Away Team: XX.X projected points**
+[Same format]
+
+Show your math. Be specific.
+
+### 3. FANTASY FOOTBALL RECOMMENDATIONS
+
+**QUARTERBACKS**
+[Player Name] ([Team])
+- Projection: XX.X fantasy points (Floor: XX.X, Ceiling: XX.X)
+- Passing: XXX yds, X.X TDs (vs [Opp] ranked #XX in pass def)
+- Rushing: XX yds, X.X TDs
+- Key Stat: [Most relevant metric]
+- Recommendation: **MUST START** / STRONG START / STREAMING / SIT
+- Reasoning: [2-3 specific sentences with data]
+
+**RUNNING BACKS**
+[Same detailed format]
+
+**WIDE RECEIVERS / TIGHT ENDS**
+[Same detailed format]
+
+**INJURY IMPACT:**
+- [Injured Player] OUT → Beneficiary: [Player] (+X targets/carries, +X.X fantasy pts)
+
+### 4. BETTING RECOMMENDATIONS (if odds available)
+
+Primary Pick: [Specific bet]
 Projection: [Your number] vs Market [Line]
-Edge: [X]% advantage
-Confidence: ⭐⭐⭐
+Confidence: ⭐⭐⭐ (XX% win probability)
 Expected Value: +X.X%
-Key Factors: [List with numbers]
+Key Factors: [Numbered list with specific stats]
 Risk Factors: [What could go wrong]
 
-REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bettors lose more on props than any other bet type.`;
+## CONFIDENCE CALIBRATION
+
+⭐ (30-45%): Weak signal, avoid
+⭐⭐ (45-55%): Slight edge only
+⭐⭐⭐ (55-65%): Solid play
+⭐⭐⭐⭐ (65-75%): Strong play (rare)
+⭐⭐⭐⭐⭐ (75%+): Exceptional (very rare)
+
+Lower confidence when data is incomplete. Be conservative.
+
+## CRITICAL RULES
+
+1. Show calculations explicitly
+2. Cite specific numbers from dataset
+3. Separate fantasy analysis from betting analysis clearly
+4. Be realistic about variance - even good projections miss
+5. Factor injuries into every recommendation
+6. Compare projections to market when available
+
+Remember: Fantasy football has fixed cost (league buy-in). Sports betting has unlimited downside. Treat them differently in tone and confidence.`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -86,14 +227,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     { key: "baseball_mlb", title: "MLB" },
     { key: "icehockey_nhl", title: "NHL" },
   ];
-
-  // Player position mappings for prop analysis
-  const nflPositionImpact = {
-    QB: { passing_yards: 1.0, passing_tds: 1.0, rushing_yards: 0.3 },
-    RB: { rushing_yards: 1.0, rushing_tds: 0.8, receptions: 0.6, receiving_yards: 0.5 },
-    WR: { receptions: 1.0, receiving_yards: 1.0, receiving_tds: 0.7 },
-    TE: { receptions: 0.8, receiving_yards: 0.7, receiving_tds: 0.5 }
-  };
 
   const calculateAdvancedFeatures = (gameData) => {
     if (!gameData) return null;
@@ -122,6 +255,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
       combinedPace: pace ? ((pace[gameData.teams.home] + pace[gameData.teams.away]) / 2) : null,
       paceTotal: pace ? (pace[gameData.teams.home] + pace[gameData.teams.away]) : null,
       paceTotalIndicator: pace ? ((pace[gameData.teams.home] + pace[gameData.teams.away]) > 126 ? "OVER" : "UNDER") : null,
+      paceFactor: pace ? ((pace[gameData.teams.home] + pace[gameData.teams.away]) / 126) : 1.0,
     };
   };
 
@@ -162,12 +296,10 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     };
   };
 
-  // NEW: Fetch player props from The Odds API
   const fetchPlayerProps = async (gameId) => {
     if (!apiKey.trim()) return;
 
     try {
-      // The Odds API supports player props for major markets
       const propsUrl = `https://api.the-odds-api.com/v4/sports/${selectedSport}/events/${gameId}/odds?apiKey=${apiKey}&regions=us&markets=player_pass_tds,player_pass_yds,player_rush_yds,player_receptions,player_reception_yds&oddsFormat=american`;
       
       const response = await fetch(propsUrl);
@@ -182,7 +314,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     return null;
   };
 
-  // NEW: Analyze player prop value
   const analyzePlayerProp = async (gameId, game, prop) => {
     const key = `${gameId}_${prop.player}_${prop.market}`;
     setPropAnalyses(prev => ({ ...prev, [key]: { loading: true } }));
@@ -192,65 +323,23 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
       const espnData = espnDataCache[gameId];
       const advancedFeatures = datasetGame ? calculateAdvancedFeatures(datasetGame) : null;
 
-      // Fetch player stats from ESPN
-      let playerStats = null;
-      try {
-        const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
-        const espnSport = sportMap[selectedSport] || 'nfl';
-        const playerName = prop.player.replace(/\s+/g, '-').toLowerCase();
-        
-        // This is a simplified example - real implementation needs player ID lookup
-        const statsResponse = await fetch(
-          `https://site.api.espn.com/apis/site/v2/sports/${espnSport === 'nfl' ? 'football/nfl' : espnSport}/players/${playerName}/statistics`
-        );
-        
-        if (statsResponse.ok) {
-          playerStats = await statsResponse.json();
-        }
-      } catch (e) {
-        console.log('Could not fetch player stats:', e);
-      }
-
-      let prompt = `Analyze this player prop for ${prop.player}:\n\n`;
+      let prompt = `Analyze this player prop:\n\n`;
+      prompt += `Player: ${prop.player}\n`;
       prompt += `Market: ${prop.market}\n`;
       prompt += `Line: ${prop.line}\n`;
-      prompt += `Price: ${prop.price}\n`;
-      prompt += `Bookmaker: ${prop.bookmaker}\n\n`;
+      prompt += `Price: ${prop.price}\n\n`;
 
       if (advancedFeatures) {
         prompt += `**GAME CONTEXT:**\n`;
-        prompt += `Pace: ${advancedFeatures.combinedPace?.toFixed(1)} plays/game (${advancedFeatures.combinedPace > 63 ? 'FAST - more opportunities' : 'SLOW - fewer opportunities'})\n`;
-        prompt += `O-Line Protection: ${advancedFeatures.passBlockAdvantage > 0 ? 'Home advantage' : 'Away advantage'} (${Math.abs(advancedFeatures.passBlockAdvantage).toFixed(1)}%)\n`;
-        prompt += `Field Position: ${advancedFeatures.fieldPositionPointValue.toFixed(1)} point advantage\n\n`;
+        prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} plays/game)\n`;
+        prompt += `O-Line: ${advancedFeatures.passBlockAdvantage > 0 ? 'Home' : 'Away'} advantage (${Math.abs(advancedFeatures.passBlockAdvantage).toFixed(1)}%)\n\n`;
       }
 
-      if (playerStats) {
-        prompt += `**PLAYER STATS:**\n`;
-        prompt += `Season Average: [Extract from playerStats]\n`;
-        prompt += `Last 5 Games: [Extract from playerStats]\n`;
-        prompt += `Usage Rate: [Calculate from stats]\n\n`;
+      if (datasetGame) {
+        prompt += `**FULL DATASET:**\n${JSON.stringify(datasetGame, null, 2)}\n\n`;
       }
 
-      if (espnData) {
-        prompt += `**INJURY CONTEXT:**\n`;
-        const playerTeam = game.home_team === prop.team ? 'home' : 'away';
-        const teamInjuries = espnData[playerTeam]?.injuries || [];
-        
-        prompt += `Team injuries that could increase ${prop.player}'s opportunity:\n`;
-        teamInjuries.forEach((inj, i) => {
-          prompt += `${i + 1}. ${inj.headline}\n`;
-        });
-      }
-
-      prompt += `\n**ANALYSIS REQUIRED:**\n`;
-      prompt += `1. Project ${prop.player}'s expected ${prop.market} in this game\n`;
-      prompt += `2. Compare to market line of ${prop.line}\n`;
-      prompt += `3. Calculate edge percentage\n`;
-      prompt += `4. Assess confidence level (1-5 stars)\n`;
-      prompt += `5. Calculate expected value\n`;
-      prompt += `6. List key factors supporting your projection\n`;
-      prompt += `7. List risk factors that could invalidate the play\n\n`;
-      prompt += `Remember: Props have 8-15% hold. You need 57%+ win rate to profit. Be conservative.`;
+      prompt += `Provide detailed prop analysis using the methodology in system prompt.`;
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -288,7 +377,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
   const calculateStatisticalPrediction = (gameData, advancedFeatures, injuryImpact) => {
     if (!advancedFeatures) return null;
 
-    let homeAdvantage = 2.5;
+    let homeAdvantage = 2.5; // Base home field
     homeAdvantage += (advancedFeatures.passBlockAdvantage * 0.05);
     homeAdvantage += (advancedFeatures.runBlockAdvantage * 0.03);
     homeAdvantage += advancedFeatures.fieldPositionPointValue;
@@ -296,11 +385,14 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     homeAdvantage += (injuryImpact.away * 0.7);
     
     const projectedSpread = Math.round(homeAdvantage * 2) / 2;
+    const projectedTotal = advancedFeatures.combinedPace ? (advancedFeatures.combinedPace * 0.7) : null;
 
     return {
       projectedSpread,
-      projectedTotal: advancedFeatures.combinedPace ? (advancedFeatures.combinedPace * 0.35) : null,
-      confidence: Math.max(1, 3 - injuryImpact.confidenceReduction)
+      projectedTotal,
+      confidence: Math.max(1, 3 - injuryImpact.confidenceReduction),
+      homeScore: projectedTotal ? ((projectedTotal / 2) + (projectedSpread / 2)) : null,
+      awayScore: projectedTotal ? ((projectedTotal / 2) - (projectedSpread / 2)) : null
     };
   };
 
@@ -308,8 +400,12 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     if (!game.bookmakers || !statProjection) return null;
 
     let bestHomeSpread = null;
+    let bestTotal = null;
+
     game.bookmakers.forEach(book => {
       const spreadMarket = book.markets?.find(m => m.key === 'spreads');
+      const totalsMarket = book.markets?.find(m => m.key === 'totals');
+      
       if (spreadMarket) {
         spreadMarket.outcomes.forEach(outcome => {
           if (outcome.name === game.home_team && (!bestHomeSpread || outcome.point < bestHomeSpread.point)) {
@@ -317,25 +413,37 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
           }
         });
       }
+
+      if (totalsMarket && totalsMarket.outcomes?.[0]) {
+        const totalLine = totalsMarket.outcomes[0].point;
+        if (!bestTotal) bestTotal = { point: totalLine, book: book.title };
+      }
     });
 
     if (!bestHomeSpread) return null;
 
     const marketSpread = bestHomeSpread.point;
     const projectedSpread = statProjection.projectedSpread;
-    const differential = projectedSpread - marketSpread;
-    const winProb = 0.5 + (differential * 0.03);
+    const spreadDiff = projectedSpread - marketSpread;
+    const winProb = 0.5 + (spreadDiff * 0.03);
     const expectedValue = ((winProb * 0.91) - ((1 - winProb) * 1)) * 100;
+
+    const totalEdge = bestTotal && statProjection.projectedTotal ? 
+      (statProjection.projectedTotal - bestTotal.point) : 0;
 
     return {
       marketSpread,
       projectedSpread,
-      differential: Math.abs(differential),
-      recommendation: differential > 0 ? 'HOME' : 'AWAY',
+      spreadDifferential: Math.abs(spreadDiff),
+      spreadRecommendation: spreadDiff > 0 ? 'HOME' : 'AWAY',
       expectedValue,
-      hasValue: expectedValue > 3,
+      hasValue: Math.abs(expectedValue) > 3,
       bestLine: bestHomeSpread,
-      confidence: statProjection.confidence
+      confidence: statProjection.confidence,
+      marketTotal: bestTotal?.point,
+      projectedTotal: statProjection.projectedTotal,
+      totalEdge: Math.abs(totalEdge),
+      totalRecommendation: totalEdge > 0 ? 'OVER' : 'UNDER'
     };
   };
 
@@ -343,47 +451,36 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     try {
       const parsed = JSON.parse(customDataset);
       setParsedDataset(parsed);
+      setDatasetLoaded(true);
       return parsed;
     } catch (err) {
+      setDatasetLoaded(false);
       return null;
     }
   };
 
- const fetchESPNData = async (teamName, sport) => {
-  try {
-    const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
-    const espnSport = sportMap[sport] || 'nfl';
-    const teamAbbr = getTeamAbbreviation(teamName, espnSport);
-    
-    // Use Vercel serverless function proxy
-    const baseUrl = window.location.hostname === 'localhost' 
-      ? 'http://localhost:3000' 
-      : window.location.origin;
-    
-    const espnPath = espnSport === 'nfl' ? 'football/nfl' : espnSport;
-    
-    const injuryResponse = await fetch(
-      `${baseUrl}/api/espn-proxy?sport=${espnPath}&team=${teamAbbr}`
-    );
+  const fetchESPNData = async (teamName, sport) => {
+    try {
+      const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
+      const espnSport = sportMap[sport] || 'nfl';
+      const teamAbbr = getTeamAbbreviation(teamName, espnSport);
+      
+      const injuryResponse = await fetch(
+        `https://site.api.espn.com/apis/site/v2/sports/${espnSport === 'nfl' ? 'football/nfl' : espnSport}/news?limit=50&team=${teamAbbr}`
+      );
 
-    if (!injuryResponse.ok) {
-      console.error('ESPN proxy failed:', injuryResponse.status);
+      const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
+      const injuries = newsData?.articles?.filter((article) => 
+        article.headline.toLowerCase().includes('injury') || 
+        article.headline.toLowerCase().includes('out') ||
+        article.headline.toLowerCase().includes('questionable')
+      ).slice(0, 5) || [];
+
+      return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
+    } catch (error) {
       return null;
     }
-
-    const newsData = await injuryResponse.json();
-    const injuries = newsData?.articles?.filter((article) => 
-      article.headline.toLowerCase().includes('injury') || 
-      article.headline.toLowerCase().includes('out') ||
-      article.headline.toLowerCase().includes('questionable')
-    ).slice(0, 5) || [];
-
-    return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
-  } catch (error) {
-    console.error('ESPN fetch error:', error);
-    return null;
-  }
-};
+  };
 
   const getTeamAbbreviation = (teamName, sport) => {
     const nflTeams = {
@@ -410,7 +507,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
     try {
       let gamesWithIds = [];
 
-      // Try Odds API if key provided
       if (apiKey.trim()) {
         try {
           const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
@@ -431,7 +527,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
         }
       }
 
-      // Fallback to dataset games if no API key or API failed
       if (gamesWithIds.length === 0 && parsedDataset?.games) {
         setError("No Odds API key provided. Loading games from dataset only.");
         gamesWithIds = parsedDataset.games.map((game, index) => ({
@@ -441,7 +536,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
           commence_time: game.kickoff_local || new Date().toISOString(),
           home_team: game.teams?.home || 'Unknown',
           away_team: game.teams?.away || 'Unknown',
-          bookmakers: [] // No odds data from dataset
+          bookmakers: []
         }));
       }
 
@@ -452,7 +547,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
 
       setGames(gamesWithIds);
 
-      // Fetch ESPN data and player props for each game
       for (const game of gamesWithIds) {
         Promise.all([
           fetchESPNData(game.home_team, selectedSport),
@@ -469,7 +563,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             }
           }));
         }).catch(err => {
-          console.log('ESPN API unavailable (CORS blocked):', err);
+          console.log('ESPN API unavailable:', err);
         });
       }
     } catch (err) {
@@ -499,19 +593,70 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(datasetGame, advancedFeatures, injuryImpact) : null;
       const marketAnalysis = statPrediction ? findMarketValue(game, statPrediction) : null;
 
-      let prompt = `Analyze ${game.away_team} @ ${game.home_team}\n\n`;
+      let prompt = `Provide comprehensive analysis for ${game.away_team} @ ${game.home_team}\n\n`;
       
-      if (marketAnalysis) {
-        prompt += `**STATISTICAL MODEL:**\n`;
-        prompt += `Projected: ${game.home_team} ${statPrediction.projectedSpread > 0 ? '-' : '+'}${Math.abs(statPrediction.projectedSpread)}\n`;
-        prompt += `Market: ${game.home_team} ${marketAnalysis.marketSpread}\n`;
-        prompt += `Edge: ${marketAnalysis.differential.toFixed(1)} pts\n`;
-        prompt += `EV: ${marketAnalysis.expectedValue.toFixed(1)}%\n\n`;
+      prompt += `**REQUIRED ANALYSIS STRUCTURE:**\n\n`;
+      prompt += `1. GAME PROJECTION SUMMARY (use formulas from system prompt)\n`;
+      prompt += `2. DETAILED SCORING BREAKDOWN (show math for both teams)\n`;
+      prompt += `3. FANTASY FOOTBALL RECOMMENDATIONS (all relevant players with projections)\n`;
+      prompt += `4. BETTING RECOMMENDATIONS (if market data available)\n\n`;
+
+      if (statPrediction && marketAnalysis) {
+        prompt += `**MODEL PROJECTIONS:**\n`;
+        prompt += `Projected Spread: ${game.home_team} ${statPrediction.projectedSpread > 0 ? '-' : '+'}${Math.abs(statPrediction.projectedSpread)}\n`;
+        prompt += `Projected Total: ${statPrediction.projectedTotal?.toFixed(1) || 'N/A'}\n`;
+        prompt += `Projected Scores: ${game.home_team} ${statPrediction.homeScore?.toFixed(1)}, ${game.away_team} ${statPrediction.awayScore?.toFixed(1)}\n`;
+        if (marketAnalysis.marketSpread) {
+          prompt += `Market Spread: ${game.home_team} ${marketAnalysis.marketSpread}\n`;
+          prompt += `Spread Edge: ${marketAnalysis.spreadDifferential.toFixed(1)} points\n`;
+        }
+        if (marketAnalysis.marketTotal) {
+          prompt += `Market Total: ${marketAnalysis.marketTotal}\n`;
+          prompt += `Total Edge: ${marketAnalysis.totalEdge.toFixed(1)} points\n`;
+        }
+        prompt += `\n`;
+      }
+
+      if (advancedFeatures) {
+        prompt += `**ADVANCED METRICS:**\n`;
+        prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} combined plays/game)\n`;
+        prompt += `O-Line Advantage: Pass ${advancedFeatures.passBlockAdvantage.toFixed(1)}%, Run ${advancedFeatures.runBlockAdvantage.toFixed(1)}%\n`;
+        prompt += `Field Position Value: ${advancedFeatures.fieldPositionPointValue.toFixed(1)} points\n\n`;
       }
 
       if (datasetGame) {
-        prompt += `**DATASET:**\n${JSON.stringify(datasetGame, null, 2)}\n\n`;
+        prompt += `**COMPLETE DATASET:**\n${JSON.stringify(datasetGame, null, 2)}\n\n`;
       }
+
+      if (espnData && (espnData.home?.injuries?.length > 0 || espnData.away?.injuries?.length > 0)) {
+        prompt += `**INJURY REPORTS:**\n`;
+        prompt += `${game.home_team}:\n`;
+        espnData.home?.injuries?.forEach((inj, i) => {
+          prompt += `${i + 1}. ${inj.headline}\n`;
+        });
+        prompt += `\n${game.away_team}:\n`;
+        espnData.away?.injuries?.forEach((inj, i) => {
+          prompt += `${i + 1}. ${inj.headline}\n`;
+        });
+        prompt += `\n`;
+      }
+
+      if (game.bookmakers?.length > 0) {
+        prompt += `**MARKET ODDS:**\n`;
+        game.bookmakers.slice(0, 2).forEach(book => {
+          prompt += `${book.title}:\n`;
+          book.markets?.forEach(market => {
+            prompt += `  ${market.key}: `;
+            market.outcomes?.forEach(outcome => {
+              prompt += `${outcome.name} ${outcome.point || ''} ${outcome.price} | `;
+            });
+            prompt += `\n`;
+          });
+        });
+        prompt += `\n`;
+      }
+
+      prompt += `Use the methodologies specified in the system prompt. Show your calculations. Be specific with projections.`;
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -534,7 +679,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
 
       setAnalyses(prev => ({
         ...prev,
-        [game.id]: { loading: false, text: analysis, marketAnalysis }
+        [game.id]: { loading: false, text: analysis, marketAnalysis, statPrediction }
       }));
     } catch (err) {
       setAnalyses(prev => ({ ...prev, [game.id]: { loading: false, text: `Error: ${err.message}` } }));
@@ -549,12 +694,12 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             CRITICAL WARNING
           </h1>
           <div style={{ color: "#ffffff", fontSize: "15px", lineHeight: "1.8", marginBottom: "25px" }}>
-            <p style={{ marginBottom: "15px", fontWeight: "600" }}>This tool will not make you money:</p>
+            <p style={{ marginBottom: "15px", fontWeight: "600" }}>This tool will not make you money betting:</p>
             <ul style={{ marginBottom: "15px", paddingLeft: "20px" }}>
               <li>Best-case accuracy: 54-56% on spreads</li>
               <li>Need 52.4% just to break even at -110</li>
               <li>You WILL lose money most sessions</li>
-              <li>Educational purposes only</li>
+              <li>Educational and fantasy football purposes only</li>
             </ul>
             <div style={{ backgroundColor: "#ff6b6b", padding: "15px", borderRadius: "8px", marginBottom: "15px" }}>
               <p style={{ margin: 0, fontWeight: "600" }}>
@@ -566,7 +711,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             onClick={() => { setUserAcknowledged(true); setShowWarning(false); }}
             style={{ width: "100%", padding: "15px", backgroundColor: "#4a4a4a", color: "white", border: "2px solid #666", borderRadius: "8px", fontSize: "16px", fontWeight: "600", cursor: "pointer" }}
           >
-            I Understand - Continue for Education
+            I Understand - Continue for Education/Fantasy
           </button>
         </div>
       </div>
@@ -576,8 +721,8 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Prediction System</h1>
-        <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>Multi-model analysis with player props</p>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Analytics & Fantasy System</h1>
+        <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>Statistical projections, fantasy recommendations, and market analysis</p>
 
         {modelPerformance.totalPredictions > 0 && (
           <div style={{ backgroundColor: "#fff3cd", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -602,7 +747,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>Configuration</h2>
           
-          {/* Data Source Status */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px", marginBottom: "20px" }}>
             <div style={{ padding: "10px", backgroundColor: parsedDataset ? "#d4edda" : "#f8f9fa", border: `1px solid ${parsedDataset ? "#28a745" : "#dee2e6"}`, borderRadius: "4px" }}>
               <div style={{ fontSize: "11px", color: "#666" }}>Dataset</div>
@@ -619,31 +763,28 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             <div style={{ padding: "10px", backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: "4px" }}>
               <div style={{ fontSize: "11px", color: "#666" }}>ESPN API</div>
               <div style={{ fontSize: "14px", fontWeight: "600", color: "#856404" }}>
-                ⚠ CORS blocked
+                Limited (CORS)
               </div>
             </div>
-          </div>
-
-          <div style={{ backgroundColor: "#fff3cd", padding: "12px", borderRadius: "6px", marginBottom: "15px", fontSize: "12px", color: "#856404" }}>
-            <strong>Note:</strong> ESPN API is blocked by browser CORS restrictions. Injury data requires a backend proxy (not included in this demo). System works with Dataset + Odds API.
           </div>
           
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
-            placeholder="Paste dataset JSON..."
+            placeholder="Paste dataset JSON with advanced metrics..."
             style={{ width: "100%", minHeight: "100px", padding: "10px", marginBottom: "10px", fontFamily: "monospace", fontSize: "12px" }}
           />
           <button onClick={parseDataset} style={{ padding: "8px 16px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", marginRight: "10px" }}>
             Load Dataset
           </button>
+          {datasetLoaded && <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>✓ Loaded</span>}
 
           <div style={{ marginTop: "20px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="The Odds API Key"
+              placeholder="The Odds API Key (optional)"
               style={{ padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
             />
             <select value={selectedSport} onChange={(e) => setSelectedSport(e.target.value)} style={{ padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}>
@@ -657,7 +798,7 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
           
           {!apiKey.trim() && (
             <div style={{ marginTop: "10px", fontSize: "13px", color: "#666" }}>
-              💡 Tip: Odds API key is optional. You can load games from your dataset alone, or provide an API key for live betting lines.
+              Tip: Odds API key is optional. System works with dataset alone for projections and fantasy analysis.
             </div>
           )}
         </div>
@@ -672,33 +813,64 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
               <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderBottom: "1px solid #e9ecef" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <h3 style={{ margin: 0 }}>{game.away_team} @ {game.home_team}</h3>
-                  <button onClick={() => analyzeGame(game)} disabled={analysis?.loading} style={{ padding: "8px 16px", backgroundColor: "#0066cc", color: "white", border: "none", borderRadius: "4px" }}>
+                  <div>
+                    <h3 style={{ margin: 0 }}>{game.away_team} @ {game.home_team}</h3>
+                    <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                      {new Date(game.commence_time).toLocaleString()}
+                    </div>
+                  </div>
+                  <button onClick={() => analyzeGame(game)} disabled={analysis?.loading} style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
                     {analysis?.loading ? "Analyzing..." : "Analyze"}
                   </button>
                 </div>
               </div>
 
               <div style={{ padding: "15px" }}>
-                {analysis?.marketAnalysis && (
-                  <div style={{ backgroundColor: analysis.marketAnalysis.hasValue ? "#d4edda" : "#f8f9fa", border: "2px solid #dee2e6", borderRadius: "6px", padding: "15px", marginBottom: "15px" }}>
-                    <h4 style={{ fontSize: "14px", marginTop: 0 }}>Model Projection</h4>
-                    <div style={{ fontSize: "12px" }}>
-                      <div>Projected: {game.home_team} {analysis.marketAnalysis.projectedSpread > 0 ? '-' : '+'}{Math.abs(analysis.marketAnalysis.projectedSpread)}</div>
-                      <div>Market: {game.home_team} {analysis.marketAnalysis.marketSpread}</div>
-                      <div>Edge: {analysis.marketAnalysis.differential.toFixed(1)} points</div>
-                      <div>EV: {analysis.marketAnalysis.expectedValue.toFixed(1)}%</div>
+                {analysis?.statPrediction && (
+                  <div style={{ backgroundColor: "#f0f9ff", border: "1px solid #0ea5e9", borderRadius: "6px", padding: "15px", marginBottom: "15px" }}>
+                    <h4 style={{ fontSize: "14px", marginTop: 0, color: "#0c4a6e" }}>Statistical Projections</h4>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", fontSize: "12px" }}>
+                      <div>
+                        <div style={{ color: "#666" }}>Projected Spread</div>
+                        <div style={{ fontWeight: "600" }}>{game.home_team} {analysis.statPrediction.projectedSpread > 0 ? '-' : '+'}{Math.abs(analysis.statPrediction.projectedSpread)}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#666" }}>Projected Total</div>
+                        <div style={{ fontWeight: "600" }}>{analysis.statPrediction.projectedTotal?.toFixed(1) || 'N/A'}</div>
+                      </div>
+                      <div>
+                        <div style={{ color: "#666" }}>Projected Score</div>
+                        <div style={{ fontWeight: "600" }}>{analysis.statPrediction.homeScore?.toFixed(1)} - {analysis.statPrediction.awayScore?.toFixed(1)}</div>
+                      </div>
+                      {analysis.marketAnalysis?.marketSpread && (
+                        <div>
+                          <div style={{ color: "#666" }}>Market Spread</div>
+                          <div style={{ fontWeight: "600" }}>{game.home_team} {analysis.marketAnalysis.marketSpread}</div>
+                        </div>
+                      )}
+                      {analysis.marketAnalysis?.marketTotal && (
+                        <div>
+                          <div style={{ color: "#666" }}>Market Total</div>
+                          <div style={{ fontWeight: "600" }}>{analysis.marketAnalysis.marketTotal}</div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
 
                 {analysis?.text && (
-                  <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "400px", overflowY: "auto" }}>
+                  <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                     {analysis.text}
                   </div>
                 )}
 
-                {/* Player Props Section */}
+                {analysis?.loading && (
+                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                    <div style={{ marginBottom: "10px" }}>Generating comprehensive analysis...</div>
+                    <div style={{ fontSize: "11px" }}>Calculating projections, fantasy recommendations, and market value...</div>
+                  </div>
+                )}
+
                 {props && (
                   <div style={{ marginTop: "20px", borderTop: "2px solid #ff6b6b", paddingTop: "15px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px" }}>
@@ -714,12 +886,11 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
                       <div style={{ backgroundColor: "#fff3cd", border: "2px solid #ffc107", borderRadius: "6px", padding: "15px", marginBottom: "15px" }}>
                         <h5 style={{ marginTop: 0, color: "#856404" }}>Props Warning</h5>
                         <div style={{ fontSize: "12px", color: "#856404", lineHeight: "1.6" }}>
-                          <p>Player props have 8-15% hold (vs 4-5% on game lines). Books make MORE profit on props than any other bet type.</p>
-                          <p>You need 57%+ win rate to profit. Most bettors achieve 50-52%. Props are designed to extract maximum money.</p>
-                          <p><strong>Proceed with extreme caution.</strong></p>
+                          <p>Player props have 8-15% hold. Books make MORE profit on props than any other bet type.</p>
+                          <p>You need 57%+ win rate to profit. Most bettors achieve 50-52%.</p>
                         </div>
                         <button onClick={() => setShowPropWarning(false)} style={{ marginTop: "10px", padding: "6px 12px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "4px", fontSize: "12px" }}>
-                          I understand the risks
+                          I understand
                         </button>
                       </div>
                     )}
@@ -762,7 +933,6 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
                           </div>
                         ))}
 
-                        {/* Display prop analyses */}
                         {Object.entries(propAnalyses).filter(([key]) => key.startsWith(game.id)).map(([key, analysis]) => (
                           analysis.text && (
                             <div key={key} style={{ marginTop: "10px", backgroundColor: "#fff3cd", border: "1px solid #ffc107", borderRadius: "6px", padding: "10px" }}>
@@ -785,9 +955,9 @@ REALITY CHECK: Props are the toughest bet type. Books have 8-15% hold. Most bett
         })}
 
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
-          <h3 style={{ margin: "0 0 10px 0" }}>This is NOT a profit system</h3>
+          <h3 style={{ margin: "0 0 10px 0" }}>This is NOT a profit system for betting</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            Props have 8-15% hold. You need 57%+ win rate. Most achieve 50-52%. Call 1-800-GAMBLER
+            Fantasy football: fixed cost hobby. Sports betting: unlimited downside. Props have 8-15% hold. Call 1-800-GAMBLER
           </p>
         </div>
       </div>
