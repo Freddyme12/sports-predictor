@@ -826,38 +826,6 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
               </div>
 
               <div style={{ padding: "15px" }}>
-                {analysis?.statPrediction && (
-                  <div style={{ backgroundColor: "#f0f9ff", border: "1px solid #0ea5e9", borderRadius: "6px", padding: "15px", marginBottom: "15px" }}>
-                    <h4 style={{ fontSize: "14px", marginTop: 0, color: "#0c4a6e" }}>Statistical Projections</h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", fontSize: "12px" }}>
-                      <div>
-                        <div style={{ color: "#666" }}>Projected Spread</div>
-                        <div style={{ fontWeight: "600" }}>{game.home_team} {analysis.statPrediction.projectedSpread > 0 ? '-' : '+'}{Math.abs(analysis.statPrediction.projectedSpread)}</div>
-                      </div>
-                      <div>
-                        <div style={{ color: "#666" }}>Projected Total</div>
-                        <div style={{ fontWeight: "600" }}>{analysis.statPrediction.projectedTotal?.toFixed(1) || 'N/A'}</div>
-                      </div>
-                      <div>
-                        <div style={{ color: "#666" }}>Projected Score</div>
-                        <div style={{ fontWeight: "600" }}>{analysis.statPrediction.homeScore?.toFixed(1)} - {analysis.statPrediction.awayScore?.toFixed(1)}</div>
-                      </div>
-                      {analysis.marketAnalysis?.marketSpread && (
-                        <div>
-                          <div style={{ color: "#666" }}>Market Spread</div>
-                          <div style={{ fontWeight: "600" }}>{game.home_team} {analysis.marketAnalysis.marketSpread}</div>
-                        </div>
-                      )}
-                      {analysis.marketAnalysis?.marketTotal && (
-                        <div>
-                          <div style={{ color: "#666" }}>Market Total</div>
-                          <div style={{ fontWeight: "600" }}>{analysis.marketAnalysis.marketTotal}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
                 {analysis?.text && (
                   <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                     {analysis.text}
