@@ -29,7 +29,109 @@ export default function App() {
 
   const systemPrompt = `You are a sports analyst providing rigorous statistical projections and fantasy football analysis.
 
-## SPREAD PROJECTION METHODOLOGY
+## SPORT DETECTION
+First, determine which sport you're analyzing based on the dataset:
+- If data contains SP+, success_rate, explosiveness, havoc_rate → College Football (CFB)
+- If data contains EPA, offensive_line_unit, player_statistics → NFL
+- Adapt your methodology accordingly
+
+## COLLEGE FOOTBALL (CFB) PROJECTION METHODOLOGY
+
+### CFB SPREAD CALCULATION
+
+Use these weighted factors for CFB:
+
+1. **SP+ Differential** (50% weight)
+   - Formula: (Home SP+ Overall - Away SP+ Overall) × 0.20 points per SP+ point
+   - Example: Home +15.9 vs Away -4.0 = 19.9 difference = 3.98 point advantage
+   - SP+ is Bill Connelly's tempo-free, opponent-adjusted efficiency metric
+
+2. **Offensive Success Rate Gap** (20% weight)
+   - Formula: (Home Off Success Rate - Away Off Success Rate) × 25 points per 0.10 differential
+   - Success Rate = percentage of plays gaining 50% of needed yards on 1st, 70% on 2nd, 100% on 3rd/4th
+   - Higher success rate = more consistent offense
+
+3. **Defensive Success Rate Advantage** (15% weight)
+   - Formula: (Away Def Success Rate - Home Def Success Rate) × 20 points per 0.10 differential
+   - Lower defensive success rate = better defense (fewer successful plays allowed)
+
+4. **Explosiveness Differential** (10% weight)
+   - Formula: (Home Explosiveness - Away Explosiveness) × 3 points per 0.10 differential
+   - Explosiveness = points per opportunity from explosive plays (10+ rush, 16+ pass yards)
+   - Big play capability matters in CFB
+
+5. **Havoc Rate Advantage** (5% weight)
+   - Formula: (Home Havoc - Away Havoc) × 15 points per 0.10 differential
+   - Havoc = TFLs + PBUs + Forced Fumbles / Total Plays
+   - Defensive playmaking ability
+
+**Home Field in CFB:** +3.5 points (larger than NFL)
+- Major conference: +3.5 to +4.0
+- High altitude (Air Force, Wyoming): +1.0 additional
+- Hostile environments (SEC, Big Ten): +0.5 additional
+
+**Final CFB Projection:** Sum all factors, round to nearest 0.5
+
+### CFB TOTAL PROJECTION
+
+Base Total = [(Home PPG + Away PPG) / 2] × 2 × Tempo Factor
+
+Where:
+- **Tempo Factor** = Based on games_played and scoring patterns
+- High tempo offenses (>80 plays/game): 1.15x multiplier
+- Slow methodical (>65 plays/game): 0.95x multiplier
+
+**Adjustments:**
+- SP+ Offense ratings: Each +10 SP+ = +3 points to total
+- SP+ Defense ratings: Each +10 SP+ (worse defense) = +2 points to total
+- Explosiveness average >1.3 = +4 points (big play game)
+- Weather: Wind >20mph = -6 pts, Rain = -3 pts (CFB more affected)
+
+### CFB BETTING CONSIDERATIONS
+
+**Key CFB Differences:**
+- Larger talent disparities = less efficient markets
+- Home field advantage is bigger (3.5+ pts vs 2.5 in NFL)
+- Weather impacts CFB more (younger players, less resources)
+- Lookahead spots and rivalry games create value
+- Conference play vs non-conference matters significantly
+
+**CFB Line Movement:**
+- Sharp money often on underdogs getting points
+- Public heavily on favorites and overs
+- Conference games more predictable than non-conference
+
+**CFB Situational Analysis (CRITICAL):**
+1. **Letdown Spots**: Team coming off emotional win/rivalry game
+2. **Lookahead Spots**: Inferior opponent before big rivalry game
+3. **Rivalry Games**: Throw out the numbers, emotion matters
+4. **Conference vs Non-Conference**: Different preparation intensity
+5. **Travel**: Cross-country trips impact young players more
+6. **Bye Weeks**: Who had bye? Fresh team = 2-3 point advantage
+7. **Coaching Matchups**: Experienced vs new coaches matters
+8. **Recent Trends**: Last 3 games often more predictive than season stats
+9. **Quarterback Situations**: Backup QB in CFB = 10-14 point swing
+10. **Motivation**: Bowl eligibility, rankings, recruiting implications
+
+**CFB Injury Impact (Different from NFL):**
+- QB injury: 10-14 points (less depth than NFL)
+- Star RB/WR: 3-5 points
+- Offensive line injuries: 4-7 points (protection crucial in CFB)
+- Defensive playmakers: 2-4 points
+- Multiple injuries = compounds faster due to depth issues
+
+**CFB Analysis Requirements:**
+When analyzing CFB games, you MUST discuss:
+1. Recent performance trend (last 3 games vs season average)
+2. Situational context (lookahead, letdown, rivalry, bye week)
+3. Home field advantage specifics (hostile environment?)
+4. Conference dynamics (conference game importance)
+5. Injury impact with CFB context (depth charts matter more)
+6. Coaching experience/matchup history
+7. Weather conditions if applicable
+8. Motivation factors (bowl eligibility, rankings, rivalry)
+
+## NFL SPREAD PROJECTION METHODOLOGY
 
 Calculate spread using these weighted factors:
 
@@ -153,12 +255,124 @@ When starter injured, calculate opportunity created:
 
 ## OUTPUT STRUCTURE
 
-### 1. GAME PROJECTION SUMMARY
+### FOR COLLEGE FOOTBALL:
+
+**1. GAME PROJECTION SUMMARY**
+Projected Spread: [Team] -X.X (Market: -Y.Y, Edge: Z.Z pts)
+Projected Total: XX.X (Market: YY.Y, Edge: Z.Z pts)
+Win Probability: Home XX% / Away YY%
+
+Key Metrics:
+- SP+ Differential: [breakdown with specific numbers]
+- Success Rate Gap: Off X.XX vs X.XX, Def X.XX vs X.XX
+- Explosiveness: Home X.XX vs Away X.XX
+- Havoc Rate: Home X.XX vs Away X.XX
+- Recent Form: [last 3 games analysis]
+
+**2. CFB SCORING BREAKDOWN**
+
+**Home Team: XX.X projected points**
+- SP+ Overall: +X.X (Offense: +X.X, Defense: +X.X)
+- Offensive efficiency: Success rate X.XX (rank interpretation), Explosiveness X.XX
+- Scoring trend: Last 3 games XX, XX, XX PPG (vs season average XX.X)
+- Home field value: +3.5 pts (adjust for specific venue factors)
+- Defensive matchup: Facing defense ranked X.X in SP+, X.XX success rate allowed
+- Red zone performance: X.XX TD rate on X.X trips/game
+- Injury adjustment: ±X.X pts (specify key players)
+- Situational factors: [bye week, lookahead, rivalry, etc.]
+
+**Away Team: XX.X projected points**
+- SP+ Overall: +X.X (Offense: +X.X, Defense: +X.X)
+- Offensive efficiency: Success rate X.XX (rank interpretation), Explosiveness X.XX
+- Scoring trend: Last 3 games XX, XX, XX PPG (vs season average XX.X)
+- Road performance: X-X away/neutral site this season
+- Defensive matchup: Facing defense ranked X.X in SP+, X.XX success rate allowed
+- Red zone performance: X.XX TD rate on X.X trips/game
+- Injury adjustment: ±X.X pts (specify key players)
+- Travel factors: [distance, time zones if cross-country]
+
+**Tempo & Style Analysis:**
+- Expected possessions: XX per team (based on pace)
+- Scoring rate: Home X.XX pts/drive, Away X.XX pts/drive
+- Turnover expectation: [based on havoc rates and ball security]
+- Time of possession edge: [slower team advantage]
+
+Show your math. Cite specific SP+, success rates, explosiveness, and recent game scores.
+
+**3. CFB SITUATIONAL CONTEXT (MANDATORY)**
+
+**Game Situation:**
+- Conference game importance: [standings implications]
+- Rivalry factor: [history, emotional intensity]
+- Lookahead/Letdown: [schedule analysis before/after]
+- Bye week advantage: [who had bye, rest difference]
+- Weather forecast: [temperature, wind, precipitation]
+- Kickoff time: [night game atmosphere, player circadian rhythm]
+
+**Coaching & Preparation:**
+- Head coach experience: [years, big game record]
+- Coaching matchup history: [if applicable]
+- Staff continuity: [coordinator changes, new schemes]
+- Preparation time: [short week, extra prep]
+
+**Motivation & Intangibles:**
+- Bowl eligibility status: [needs win for bowl?]
+- Ranking implications: [CFP, top 25 considerations]
+- Senior day/homecoming: [emotional factors]
+- Recruiting weekend: [big visitors, extra motivation]
+
+**Recent Momentum:**
+- Last 3 game results with margin: [W by 14, L by 3, W by 21]
+- Scoring trends: [improving or declining]
+- Close game performance: [clutch or choke in 1-score games]
+
+**4. CFB BETTING ANALYSIS**
+
+**Primary Recommendation:** [Side/Total with specific bet]
+
+**Projection vs Market:**
+- Model Spread: [Your number]
+- Market Spread: [Best available line]
+- Edge: X.X points
+- Win Probability: XX%
+- Expected Value: +X.X%
+
+**Confidence: ⭐⭐⭐ (scale 1-5)**
+
+**Supporting Factors (Ranked by Importance):**
+1. **SP+ Advantage**: [Specific differential and what it means]
+2. **Recent Form**: [Last 3 games performance vs opponent]
+3. **Matchup Edge**: [Success rate or explosiveness advantage]
+4. **Situational**: [Lookahead, rivalry, bye week, etc.]
+5. **Home Field**: [Specific venue advantage if significant]
+6. **Injuries**: [Impact of key players out/questionable]
+7. **Coaching**: [Experience or historical matchup edge]
+8. **Motivation**: [Bowl eligibility, rankings, rivalry]
+
+**Risk Factors:**
+- CFB variance: [Young players, inconsistent performance]
+- Weather: [If adverse conditions expected]
+- Line movement: [If sharp money moving away from your pick]
+- Public betting: [If you're on/against heavy public side]
+- Turnover luck: [If team has been lucky/unlucky with turnovers]
+- Key player health: [Uncertainty around questionable players]
+
+**Alternative Plays:**
+- [If spread doesn't have value, discuss total]
+- [Mention if live betting could offer better opportunity]
+
+**Historical Context:**
+- Similar matchups this season: [How teams performed in similar spots]
+- Series history if rivalry: [Recent results, home/away splits]
+
+### FOR NFL:
+
+**1. GAME PROJECTION SUMMARY**
 Projected Spread: [Team] -X.X (Market: -Y.Y, Edge: Z.Z pts, EV: +X.X%)
 Projected Total: XX.X (Market: YY.Y, Edge: Z.Z pts)
 Win Probability: Home XX% / Away YY%
 
-### 2. SCORING BREAKDOWN
+**2. SCORING BREAKDOWN**
 **Home Team: XX.X projected points**
 - Base offensive expectation: XX pts (EPA-based)
 - Field position value: +X.X pts
@@ -171,7 +385,7 @@ Win Probability: Home XX% / Away YY%
 
 Show your math. Be specific.
 
-### 3. FANTASY FOOTBALL RECOMMENDATIONS
+**3. FANTASY FOOTBALL RECOMMENDATIONS**
 
 **QUARTERBACKS**
 [Player Name] ([Team])
@@ -191,7 +405,7 @@ Show your math. Be specific.
 **INJURY IMPACT:**
 - [Injured Player] OUT → Beneficiary: [Player] (+X targets/carries, +X.X fantasy pts)
 
-### 4. BETTING RECOMMENDATIONS (if odds available)
+**4. BETTING RECOMMENDATIONS (if odds available)**
 
 Primary Pick: [Specific bet]
 Projection: [Your number] vs Market [Line]
@@ -223,6 +437,7 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
+    { key: "americanfootball_ncaaf", title: "College Football" },
     { key: "basketball_nba", title: "NBA" },
     { key: "baseball_mlb", title: "MLB" },
     { key: "icehockey_nhl", title: "NHL" },
@@ -231,6 +446,32 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
   const calculateAdvancedFeatures = (gameData) => {
     if (!gameData) return null;
 
+    // Check if this is CFB data (has team_data structure with SP+)
+    if (gameData.team_data) {
+      const home = gameData.team_data.home;
+      const away = gameData.team_data.away;
+
+      if (!home || !away) return null;
+
+      return {
+        sport: 'CFB',
+        spPlusDiff: (home.sp_overall || 0) - (away.sp_overall || 0),
+        offSuccessRateDiff: (home.off_success_rate || 0) - (away.off_success_rate || 0),
+        defSuccessRateAdvantage: (away.def_success_rate || 0) - (home.def_success_rate || 0),
+        explosivenessDiff: (home.off_explosiveness || 0) - (away.off_explosiveness || 0),
+        havocRateDiff: (home.havoc_rate || 0) - (away.havoc_rate || 0),
+        homePPG: home.points_per_game || 0,
+        awayPPG: away.points_per_game || 0,
+        homeRecord: home.record || '0-0',
+        awayRecord: away.record || '0-0',
+        homeDefenseRating: home.sp_defense || 0,
+        awayDefenseRating: away.sp_defense || 0,
+        homeOffenseRating: home.sp_offense || 0,
+        awayOffenseRating: away.sp_offense || 0
+      };
+    }
+
+    // NFL data structure
     const home = gameData.player_statistics?.[gameData.teams.home]?.offensive_line_unit;
     const away = gameData.player_statistics?.[gameData.teams.away]?.offensive_line_unit;
     const homeSpecial = gameData.team_statistics?.[gameData.teams.home]?.special_teams;
@@ -240,6 +481,7 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
     if (!home || !away) return null;
 
     return {
+      sport: 'NFL',
       passBlockAdvantage: home.pass_block_win_rate - away.pass_block_win_rate,
       runBlockAdvantage: home.run_block_win_rate - away.run_block_win_rate,
       pressureIndex: (away.sacks_allowed / (away.pass_block_win_rate || 1)) - 
@@ -331,8 +573,13 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
 
       if (advancedFeatures) {
         prompt += `**GAME CONTEXT:**\n`;
-        prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} plays/game)\n`;
-        prompt += `O-Line: ${advancedFeatures.passBlockAdvantage > 0 ? 'Home' : 'Away'} advantage (${Math.abs(advancedFeatures.passBlockAdvantage).toFixed(1)}%)\n\n`;
+        if (advancedFeatures.sport === 'CFB') {
+          prompt += `SP+ Differential: ${advancedFeatures.spPlusDiff?.toFixed(1)}\n`;
+          prompt += `Success Rate Gap: ${(advancedFeatures.offSuccessRateDiff * 100).toFixed(1)}%\n\n`;
+        } else {
+          prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} plays/game)\n`;
+          prompt += `O-Line: ${advancedFeatures.passBlockAdvantage > 0 ? 'Home' : 'Away'} advantage (${Math.abs(advancedFeatures.passBlockAdvantage).toFixed(1)}%)\n\n`;
+        }
       }
 
       if (datasetGame) {
@@ -377,7 +624,51 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
   const calculateStatisticalPrediction = (gameData, advancedFeatures, injuryImpact) => {
     if (!advancedFeatures) return null;
 
-    let homeAdvantage = 2.5; // Base home field
+    // CFB prediction logic
+    if (advancedFeatures.sport === 'CFB') {
+      let homeAdvantage = 3.5; // Base CFB home field
+
+      // SP+ Differential (50% weight)
+      homeAdvantage += advancedFeatures.spPlusDiff * 0.20 * 0.50;
+
+      // Offensive Success Rate Gap (20% weight)
+      homeAdvantage += advancedFeatures.offSuccessRateDiff * 25 * 0.20;
+
+      // Defensive Success Rate Advantage (15% weight)
+      homeAdvantage += advancedFeatures.defSuccessRateAdvantage * 20 * 0.15;
+
+      // Explosiveness Differential (10% weight)
+      homeAdvantage += advancedFeatures.explosivenessDiff * 3 * 0.10;
+
+      // Havoc Rate Advantage (5% weight)
+      homeAdvantage += advancedFeatures.havocRateDiff * 15 * 0.05;
+
+      const projectedSpread = Math.round(homeAdvantage * 2) / 2;
+
+      // Total calculation for CFB
+      const basePPG = (advancedFeatures.homePPG + advancedFeatures.awayPPG) / 2;
+      let projectedTotal = basePPG * 2;
+
+      // Adjust for offensive ratings
+      projectedTotal += (advancedFeatures.homeOffenseRating / 10) * 0.15;
+      projectedTotal += (advancedFeatures.awayOffenseRating / 10) * 0.15;
+
+      // Adjust for defensive ratings (higher is worse)
+      projectedTotal += (advancedFeatures.homeDefenseRating / 10) * 0.10;
+      projectedTotal += (advancedFeatures.awayDefenseRating / 10) * 0.10;
+
+      return {
+        projectedSpread,
+        projectedTotal: Math.round(projectedTotal * 2) / 2,
+        confidence: 3,
+        homeScore: (projectedTotal / 2) + (projectedSpread / 2),
+        awayScore: (projectedTotal / 2) - (projectedSpread / 2),
+        sport: 'CFB'
+      };
+    }
+
+    // NFL prediction logic
+    let homeAdvantage = 2.5; // Base NFL home field
     homeAdvantage += (advancedFeatures.passBlockAdvantage * 0.05);
     homeAdvantage += (advancedFeatures.runBlockAdvantage * 0.03);
     homeAdvantage += advancedFeatures.fieldPositionPointValue;
@@ -392,7 +683,8 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
       projectedTotal,
       confidence: Math.max(1, 3 - injuryImpact.confidenceReduction),
       homeScore: projectedTotal ? ((projectedTotal / 2) + (projectedSpread / 2)) : null,
-      awayScore: projectedTotal ? ((projectedTotal / 2) - (projectedSpread / 2)) : null
+      awayScore: projectedTotal ? ((projectedTotal / 2) - (projectedSpread / 2)) : null,
+      sport: 'NFL'
     };
   };
 
@@ -461,19 +753,30 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
 
   const fetchESPNData = async (teamName, sport) => {
     try {
-      const sportMap = { 'americanfootball_nfl': 'nfl', 'basketball_nba': 'nba' };
+      const sportMap = { 
+        'americanfootball_nfl': 'nfl',
+        'americanfootball_ncaaf': 'ncaaf',
+        'basketball_nba': 'nba' 
+      };
       const espnSport = sportMap[sport] || 'nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, espnSport);
+      const teamAbbr = getTeamAbbreviation(teamName, espnSport === 'ncaaf' ? 'cfb' : espnSport);
+      
+      // Different ESPN API paths for NFL vs CFB
+      const sportPath = espnSport === 'nfl' ? 'football/nfl' : 
+                       espnSport === 'ncaaf' ? 'football/college-football' : 
+                       espnSport;
       
       const injuryResponse = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/${espnSport === 'nfl' ? 'football/nfl' : espnSport}/news?limit=50&team=${teamAbbr}`
+        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/news?limit=50&team=${teamAbbr}`
       );
 
       const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
       const injuries = newsData?.articles?.filter((article) => 
         article.headline.toLowerCase().includes('injury') || 
         article.headline.toLowerCase().includes('out') ||
-        article.headline.toLowerCase().includes('questionable')
+        article.headline.toLowerCase().includes('questionable') ||
+        article.headline.toLowerCase().includes('doubtful') ||
+        article.headline.toLowerCase().includes('suspended')
       ).slice(0, 5) || [];
 
       return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
@@ -496,7 +799,74 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
       'San Francisco 49ers': 'sf', 'Seattle Seahawks': 'sea', 'Tampa Bay Buccaneers': 'tb',
       'Tennessee Titans': 'ten', 'Washington Commanders': 'wsh'
     };
-    return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
+
+    const cfbTeams = {
+      // ACC
+      'Boston College Eagles': 'bc', 'Clemson Tigers': 'clem', 'Duke Blue Devils': 'duke',
+      'Florida State Seminoles': 'fsu', 'Georgia Tech Yellow Jackets': 'gt',
+      'Louisville Cardinals': 'lou', 'Miami Hurricanes': 'miami', 'NC State Wolfpack': 'ncst',
+      'North Carolina Tar Heels': 'unc', 'Pittsburgh Panthers': 'pitt', 'Syracuse Orange': 'cuse',
+      'Virginia Cavaliers': 'uva', 'Virginia Tech Hokies': 'vt', 'Wake Forest Demon Deacons': 'wake',
+      'California Golden Bears': 'cal', 'Stanford Cardinal': 'stan', 'SMU Mustangs': 'smu',
+      
+      // Big Ten
+      'Illinois Fighting Illini': 'ill', 'Indiana Hoosiers': 'ind', 'Iowa Hawkeyes': 'iowa',
+      'Maryland Terrapins': 'md', 'Michigan Wolverines': 'mich', 'Michigan State Spartans': 'msu',
+      'Minnesota Golden Gophers': 'minn', 'Nebraska Cornhuskers': 'neb', 'Northwestern Wildcats': 'nw',
+      'Ohio State Buckeyes': 'osu', 'Penn State Nittany Lions': 'psu', 'Purdue Boilermakers': 'pur',
+      'Rutgers Scarlet Knights': 'rut', 'Wisconsin Badgers': 'wisc', 'Oregon Ducks': 'ore',
+      'UCLA Bruins': 'ucla', 'USC Trojans': 'usc', 'Washington Huskies': 'wash',
+      
+      // Big 12
+      'Baylor Bears': 'bay', 'BYU Cougars': 'byu', 'Cincinnati Bearcats': 'cin',
+      'Houston Cougars': 'hou', 'Iowa State Cyclones': 'isu', 'Kansas Jayhawks': 'ku',
+      'Kansas State Wildcats': 'ksu', 'Oklahoma State Cowboys': 'okst', 'TCU Horned Frogs': 'tcu',
+      'Texas Tech Red Raiders': 'tt', 'UCF Knights': 'ucf', 'West Virginia Mountaineers': 'wvu',
+      'Arizona Wildcats': 'ariz', 'Arizona State Sun Devils': 'asu', 'Colorado Buffaloes': 'col',
+      'Utah Utes': 'utah',
+      
+      // SEC
+      'Alabama Crimson Tide': 'bama', 'Arkansas Razorbacks': 'ark', 'Auburn Tigers': 'aub',
+      'Florida Gators': 'fla', 'Georgia Bulldogs': 'uga', 'Kentucky Wildcats': 'uk',
+      'LSU Tigers': 'lsu', 'Ole Miss Rebels': 'miss', 'Mississippi State Bulldogs': 'msst',
+      'Missouri Tigers': 'mizz', 'South Carolina Gamecocks': 'sc', 'Tennessee Volunteers': 'tenn',
+      'Texas A&M Aggies': 'tam', 'Vanderbilt Commodores': 'vandy', 'Oklahoma Sooners': 'okla',
+      'Texas Longhorns': 'tex',
+      
+      // Other Power Conferences
+      'Notre Dame Fighting Irish': 'nd',
+      
+      // Group of 5 & Others
+      'Air Force Falcons': 'af', 'Akron Zips': 'akr', 'Appalachian State Mountaineers': 'app',
+      'Army Black Knights': 'army', 'Ball State Cardinals': 'bsu', 'Boise State Broncos': 'boise',
+      'Bowling Green Falcons': 'bg', 'Buffalo Bulls': 'buf', 'Central Michigan Chippewas': 'cmu',
+      'Charlotte 49ers': 'char', 'Coastal Carolina Chanticleers': 'ccu', 'Colorado State Rams': 'csu',
+      'East Carolina Pirates': 'ecu', 'Eastern Michigan Eagles': 'emu', 'Florida Atlantic Owls': 'fau',
+      'Florida International Golden Panthers': 'fiu', 'Fresno State Bulldogs': 'fres',
+      'Georgia Southern Eagles': 'gaso', 'Georgia State Panthers': 'gast', 'Hawaii Rainbow Warriors': 'haw',
+      'James Madison Dukes': 'jmu', 'Kent State Golden Flashes': 'kent', 'Liberty Flames': 'lib',
+      'Louisiana Ragin Cajuns': 'ul', 'Louisiana Tech Bulldogs': 'lat', 'Marshall Thundering Herd': 'mar',
+      'Memphis Tigers': 'mem', 'Miami (OH) RedHawks': 'moh', 'Middle Tennessee Blue Raiders': 'mtsu',
+      'Navy Midshipmen': 'navy', 'Nevada Wolf Pack': 'nev', 'New Mexico Lobos': 'unm',
+      'New Mexico State Aggies': 'nmsu', 'North Texas Mean Green': 'unt', 'Northern Illinois Huskies': 'niu',
+      'Ohio Bobcats': 'ohio', 'Old Dominion Monarchs': 'odu', 'Rice Owls': 'rice',
+      'San Diego State Aztecs': 'sdsu', 'San José State Spartans': 'sjsu', 'South Alabama Jaguars': 'usa',
+      'South Florida Bulls': 'usf', 'Southern Miss Golden Eagles': 'usm', 'Temple Owls': 'tem',
+      'Texas State Bobcats': 'txst', 'Toledo Rockets': 'tol', 'Troy Trojans': 'troy',
+      'Tulane Green Wave': 'tul', 'Tulsa Golden Hurricane': 'tulsa', 'UAB Blazers': 'uab',
+      'UNLV Rebels': 'unlv', 'UConn Huskies': 'uconn', 'UTEP Miners': 'utep',
+      'UTSA Roadrunners': 'utsa', 'Utah State Aggies': 'usu', 'Western Kentucky Hilltoppers': 'wku',
+      'Western Michigan Broncos': 'wmu', 'Wyoming Cowboys': 'wyo',
+      
+      // FCS Teams commonly in datasets
+      'Delaware Blue Hens': 'del', 'Delaware State Hornets': 'dsu', 'Jacksonville State Gamecocks': 'jax',
+      'Sam Houston Bearkats': 'shsu', 'Kennesaw State Owls': 'ksu'
+    };
+    
+    if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
+    if (sport === 'ncaaf' || sport === 'cfb') return cfbTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
+    
+    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
   };
 
   const fetchGames = async () => {
@@ -529,15 +899,32 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
 
       if (gamesWithIds.length === 0 && parsedDataset?.games) {
         setError("No Odds API key provided. Loading games from dataset only.");
-        gamesWithIds = parsedDataset.games.map((game, index) => ({
-          id: game.game_id || `dataset_${index}`,
-          sport_key: selectedSport,
-          sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
-          commence_time: game.kickoff_local || new Date().toISOString(),
-          home_team: game.teams?.home || 'Unknown',
-          away_team: game.teams?.away || 'Unknown',
-          bookmakers: []
-        }));
+        gamesWithIds = parsedDataset.games.map((game, index) => {
+          // Handle both CFB and NFL dataset structures
+          let homeTeam, awayTeam, gameTime;
+          
+          if (game.team_data) {
+            // CFB structure
+            homeTeam = game.home_team || 'Unknown';
+            awayTeam = game.away_team || 'Unknown';
+            gameTime = game.date || new Date().toISOString();
+          } else {
+            // NFL structure
+            homeTeam = game.teams?.home || 'Unknown';
+            awayTeam = game.teams?.away || 'Unknown';
+            gameTime = game.kickoff_local || new Date().toISOString();
+          }
+
+          return {
+            id: game.game_id || `dataset_${index}`,
+            sport_key: selectedSport,
+            sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
+            commence_time: gameTime,
+            home_team: homeTeam,
+            away_team: awayTeam,
+            bookmakers: []
+          };
+        });
       }
 
       if (gamesWithIds.length === 0) {
@@ -576,9 +963,27 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
   const findMatchingDatasetGame = (oddsGame) => {
     if (!parsedDataset?.games) return null;
     return parsedDataset.games.find((dataGame) => {
+      // Handle both NFL and CFB dataset structures
       const oddsHome = oddsGame.home_team.toLowerCase().replace(/[^a-z]/g, '');
-      const dataHome = (dataGame.teams?.home || "").toLowerCase();
-      return oddsHome.includes(dataHome) || dataHome.includes(oddsHome);
+      const oddsAway = oddsGame.away_team.toLowerCase().replace(/[^a-z]/g, '');
+      
+      // Try NFL structure first (teams object)
+      if (dataGame.teams) {
+        const dataHome = (dataGame.teams.home || "").toLowerCase().replace(/[^a-z]/g, '');
+        const dataAway = (dataGame.teams.away || "").toLowerCase().replace(/[^a-z]/g, '');
+        return (oddsHome.includes(dataHome) || dataHome.includes(oddsHome)) &&
+               (oddsAway.includes(dataAway) || dataAway.includes(oddsAway));
+      }
+      
+      // Try CFB structure (home_team and away_team direct properties)
+      if (dataGame.home_team && dataGame.away_team) {
+        const dataHome = dataGame.home_team.toLowerCase().replace(/[^a-z]/g, '');
+        const dataAway = dataGame.away_team.toLowerCase().replace(/[^a-z]/g, '');
+        return (oddsHome.includes(dataHome) || dataHome.includes(oddsHome)) &&
+               (oddsAway.includes(dataAway) || dataAway.includes(oddsAway));
+      }
+      
+      return false;
     });
   };
 
@@ -593,13 +998,24 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(datasetGame, advancedFeatures, injuryImpact) : null;
       const marketAnalysis = statPrediction ? findMarketValue(game, statPrediction) : null;
 
+      const isCFB = advancedFeatures?.sport === 'CFB';
+
       let prompt = `Provide comprehensive analysis for ${game.away_team} @ ${game.home_team}\n\n`;
       
-      prompt += `**REQUIRED ANALYSIS STRUCTURE:**\n\n`;
-      prompt += `1. GAME PROJECTION SUMMARY (use formulas from system prompt)\n`;
-      prompt += `2. DETAILED SCORING BREAKDOWN (show math for both teams)\n`;
-      prompt += `3. FANTASY FOOTBALL RECOMMENDATIONS (all relevant players with projections)\n`;
-      prompt += `4. BETTING RECOMMENDATIONS (if market data available)\n\n`;
+      if (isCFB) {
+        prompt += `**SPORT: COLLEGE FOOTBALL**\n\n`;
+        prompt += `**REQUIRED CFB ANALYSIS STRUCTURE:**\n`;
+        prompt += `1. GAME PROJECTION SUMMARY (use CFB formulas from system prompt)\n`;
+        prompt += `2. CFB SCORING BREAKDOWN (show SP+ calculations for both teams)\n`;
+        prompt += `3. CFB BETTING RECOMMENDATIONS (with situational context)\n\n`;
+      } else {
+        prompt += `**SPORT: NFL**\n\n`;
+        prompt += `**REQUIRED NFL ANALYSIS STRUCTURE:**\n`;
+        prompt += `1. GAME PROJECTION SUMMARY (use NFL formulas from system prompt)\n`;
+        prompt += `2. DETAILED SCORING BREAKDOWN (show math for both teams)\n`;
+        prompt += `3. FANTASY FOOTBALL RECOMMENDATIONS (all relevant players with projections)\n`;
+        prompt += `4. BETTING RECOMMENDATIONS (if market data available)\n\n`;
+      }
 
       if (statPrediction && marketAnalysis) {
         prompt += `**MODEL PROJECTIONS:**\n`;
@@ -618,10 +1034,54 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
       }
 
       if (advancedFeatures) {
-        prompt += `**ADVANCED METRICS:**\n`;
-        prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} combined plays/game)\n`;
-        prompt += `O-Line Advantage: Pass ${advancedFeatures.passBlockAdvantage.toFixed(1)}%, Run ${advancedFeatures.runBlockAdvantage.toFixed(1)}%\n`;
-        prompt += `Field Position Value: ${advancedFeatures.fieldPositionPointValue.toFixed(1)} points\n\n`;
+        if (isCFB) {
+          prompt += `**CFB ADVANCED METRICS:**\n`;
+          prompt += `SP+ Differential: ${advancedFeatures.spPlusDiff.toFixed(1)} (Home ${datasetGame.team_data.home.sp_overall?.toFixed(1)}, Away ${datasetGame.team_data.away.sp_overall?.toFixed(1)})\n`;
+          prompt += `Offense Ratings: Home ${datasetGame.team_data.home.sp_offense?.toFixed(1)}, Away ${datasetGame.team_data.away.sp_offense?.toFixed(1)}\n`;
+          prompt += `Defense Ratings: Home ${datasetGame.team_data.home.sp_defense?.toFixed(1)}, Away ${datasetGame.team_data.away.sp_defense?.toFixed(1)}\n`;
+          prompt += `Success Rate Gap: Off ${(advancedFeatures.offSuccessRateDiff * 100).toFixed(1)}%, Def ${(advancedFeatures.defSuccessRateAdvantage * 100).toFixed(1)}%\n`;
+          prompt += `Explosiveness Diff: ${advancedFeatures.explosivenessDiff.toFixed(2)} (Home ${datasetGame.team_data.home.off_explosiveness?.toFixed(2)}, Away ${datasetGame.team_data.away.off_explosiveness?.toFixed(2)})\n`;
+          prompt += `Havoc Rate Diff: ${(advancedFeatures.havocRateDiff * 100).toFixed(1)}% (Home ${(datasetGame.team_data.home.havoc_rate * 100).toFixed(1)}%, Away ${(datasetGame.team_data.away.havoc_rate * 100).toFixed(1)}%)\n`;
+          prompt += `Records: ${game.home_team} ${advancedFeatures.homeRecord}, ${game.away_team} ${advancedFeatures.awayRecord}\n`;
+          prompt += `Scoring: ${game.home_team} ${advancedFeatures.homePPG.toFixed(1)} PPG / ${datasetGame.team_data.home.points_allowed_per_game?.toFixed(1)} allowed, ${game.away_team} ${advancedFeatures.awayPPG.toFixed(1)} PPG / ${datasetGame.team_data.away.points_allowed_per_game?.toFixed(1)} allowed\n\n`;
+          
+          // Add recent game results for CFB
+          if (datasetGame.team_data.home.game_results) {
+            prompt += `**${game.home_team} RECENT RESULTS:**\n`;
+            datasetGame.team_data.home.game_results.slice(-3).forEach(gr => {
+              const result = gr.points_for > gr.points_against ? 'W' : 'L';
+              const margin = Math.abs(gr.points_for - gr.points_against);
+              const location = gr.home ? 'vs' : '@';
+              prompt += `  Week ${gr.week}: ${result} ${location} ${gr.opponent} ${gr.points_for}-${gr.points_against} (${result} by ${margin})\n`;
+            });
+            prompt += `\n`;
+          }
+          
+          if (datasetGame.team_data.away.game_results) {
+            prompt += `**${game.away_team} RECENT RESULTS:**\n`;
+            datasetGame.team_data.away.game_results.slice(-3).forEach(gr => {
+              const result = gr.points_for > gr.points_against ? 'W' : 'L';
+              const margin = Math.abs(gr.points_for - gr.points_against);
+              const location = gr.home ? 'vs' : '@';
+              prompt += `  Week ${gr.week}: ${result} ${location} ${gr.opponent} ${gr.points_for}-${gr.points_against} (${result} by ${margin})\n`;
+            });
+            prompt += `\n`;
+          }
+          
+          prompt += `**REQUIRED CFB ANALYSIS ELEMENTS:**\n`;
+          prompt += `1. Analyze recent trends: Are teams improving or declining based on last 3 games?\n`;
+          prompt += `2. Situational context: Check schedules for lookahead/letdown spots\n`;
+          prompt += `3. Home field impact: Discuss specific venue advantages if significant\n`;
+          prompt += `4. Motivation factors: Bowl eligibility, rankings, rivalry implications\n`;
+          prompt += `5. Coaching matchup: Experience and historical context if known\n`;
+          prompt += `6. Injury impact: Contextualize with CFB depth concerns\n\n`;
+          
+        } else {
+          prompt += `**NFL ADVANCED METRICS:**\n`;
+          prompt += `Pace Factor: ${advancedFeatures.paceFactor?.toFixed(2)} (${advancedFeatures.combinedPace?.toFixed(1)} combined plays/game)\n`;
+          prompt += `O-Line Advantage: Pass ${advancedFeatures.passBlockAdvantage.toFixed(1)}%, Run ${advancedFeatures.runBlockAdvantage.toFixed(1)}%\n`;
+          prompt += `Field Position Value: ${advancedFeatures.fieldPositionPointValue.toFixed(1)} points\n\n`;
+        }
       }
 
       if (datasetGame) {
@@ -656,7 +1116,7 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
         prompt += `\n`;
       }
 
-      prompt += `Use the methodologies specified in the system prompt. Show your calculations. Be specific with projections.`;
+      prompt += `Use the ${isCFB ? 'CFB' : 'NFL'} methodologies specified in the system prompt. Show your calculations. Be specific with projections.`;
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -808,6 +1268,9 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
         {games.map(game => {
           const analysis = analyses[game.id];
           const props = playerProps[game.id];
+          const datasetGame = findMatchingDatasetGame(game);
+          const advancedFeatures = datasetGame ? calculateAdvancedFeatures(datasetGame) : null;
+          const espnData = espnDataCache[game.id];
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -817,6 +1280,57 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
                     <h3 style={{ margin: 0 }}>{game.away_team} @ {game.home_team}</h3>
                     <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
                       {new Date(game.commence_time).toLocaleString()}
+                    </div>
+                    
+                    {/* Data availability indicators */}
+                    <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {advancedFeatures && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: advancedFeatures.sport === 'CFB' ? "#d1ecf1" : "#d4edda",
+                          color: advancedFeatures.sport === 'CFB' ? "#0c5460" : "#155724",
+                          fontWeight: "600"
+                        }}>
+                          {advancedFeatures.sport === 'CFB' ? '✓ CFB SP+ Data' : '✓ NFL EPA Data'}
+                        </span>
+                      )}
+                      {espnData?.home?.injuries?.length > 0 || espnData?.away?.injuries?.length > 0 ? (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#fff3cd",
+                          color: "#856404",
+                          fontWeight: "600"
+                        }}>
+                          ⚠ {(espnData?.home?.injuries?.length || 0) + (espnData?.away?.injuries?.length || 0)} Injuries
+                        </span>
+                      ) : espnData ? (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#d4edda",
+                          color: "#155724",
+                          fontWeight: "600"
+                        }}>
+                          ✓ Clean Injury Report
+                        </span>
+                      ) : null}
+                      {game.bookmakers?.length > 0 && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#e7f3ff",
+                          color: "#004085",
+                          fontWeight: "600"
+                        }}>
+                          ✓ {game.bookmakers.length} Books
+                        </span>
+                      )}
                     </div>
                   </div>
                   <button onClick={() => analyzeGame(game)} disabled={analysis?.loading} style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
@@ -835,7 +1349,7 @@ Remember: Fantasy football has fixed cost (league buy-in). Sports betting has un
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
                     <div style={{ marginBottom: "10px" }}>Generating comprehensive analysis...</div>
-                    <div style={{ fontSize: "11px" }}>Calculating projections, fantasy recommendations, and market value...</div>
+                    <div style={{ fontSize: "11px" }}>Calculating projections, {advancedFeatures?.sport === 'CFB' ? 'situational context' : 'fantasy recommendations'}, and market value...</div>
                   </div>
                 )}
 
