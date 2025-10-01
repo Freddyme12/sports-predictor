@@ -17,6 +17,7 @@ export default function App() {
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
   const [predictionTracking, setPredictionTracking] = useState([]);
+  const [apiSportsKey, setApiSportsKey] = useState("");
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
   const [showWarning, setShowWarning] = useState(true);
@@ -120,41 +121,12 @@ export default function App() {
   };
 
   const fetchNfeloData = async () => {
-    if (selectedSport !== "americanfootball_nfl") {
-      setNfeloAvailable(false);
-      return null;
-    }
+    setNfeloAvailable(false);
+    return null;
     
-    try {
-      const currentYear = new Date().getFullYear();
-      const currentWeek = 5;
-      
-      const sources = [
-        "https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_" + currentYear + "_week" + currentWeek + ".json"
-      ];
-      
-      for (const source of sources) {
-        try {
-          const response = await fetch(source);
-          if (response.ok) {
-            const data = await response.json();
-            if (data && (data.games || data.predictions)) {
-              setNfeloData(data);
-              setNfeloAvailable(true);
-              return data;
-            }
-          }
-        } catch (err) {
-          continue;
-        }
-      }
-      
-      setNfeloAvailable(false);
-      return null;
-    } catch (err) {
-      setNfeloAvailable(false);
-      return null;
-    }
+    // nfelo no longer provides public API/JSON data after their rebuild
+    // Keeping this function for future implementation if they add API access
+    // Contact @greerreNFL on Twitter or GitHub for updates
   };
 
   const findNfeloPrediction = (game) => {
@@ -179,6 +151,84 @@ export default function App() {
       return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
              (gameAway.includes(predAway) || predAway.includes(gameAway));
     });
+  };
+
+  const fetchApiSportsOdds = async (gameDate) => {
+    if (!apiSportsKey) return null;
+
+    try {
+      const response = await fetch('https://v1.american-football.api-sports.io/games?season=2025&date=' + gameDate, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-host': 'v1.american-football.api-sports.io',
+          'x-rapidapi-key': apiSportsKey
+        }
+      });
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.response || [];
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const fetchApiSportsInjuries = async (teamName, sport) => {
+    if (!apiSportsKey || !teamName) {
+      return { team: teamName, injuries: [], source: 'no-key' };
+    }
+
+    try {
+      let apiUrl = '';
+      if (sport === 'americanfootball_nfl') {
+        apiUrl = 'https://v1.american-football.api-sports.io/teams';
+      } else {
+        return { team: teamName, injuries: [], source: 'unsupported-sport' };
+      }
+
+      const response = await fetch(apiUrl + '?name=' + encodeURIComponent(teamName), {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-host': 'v1.american-football.api-sports.io',
+          'x-rapidapi-key': apiSportsKey
+        }
+      });
+
+      if (!response.ok) {
+        return { team: teamName, injuries: [], source: 'api-error' };
+      }
+
+      const data = await response.json();
+      
+      if (data.response && data.response.length > 0) {
+        const teamId = data.response[0].id;
+        
+        const injuryResponse = await fetch('https://v1.american-football.api-sports.io/injuries?team=' + teamId + '&season=2025', {
+          method: 'GET',
+          headers: {
+            'x-rapidapi-host': 'v1.american-football.api-sports.io',
+            'x-rapidapi-key': apiSportsKey
+          }
+        });
+
+        if (injuryResponse.ok) {
+          const injuryData = await injuryResponse.json();
+          const injuries = (injuryData.response || []).map(inj => ({
+            headline: inj.player.name + ' - ' + inj.type + ' (' + inj.reason + ')'
+          }));
+          
+          return {
+            team: teamName,
+            injuries: injuries,
+            source: 'api-sports'
+          };
+        }
+      }
+
+      return { team: teamName, injuries: [], source: 'no-data' };
+    } catch (error) {
+      return { team: teamName, injuries: [], source: 'error' };
+    }
   };
 
   const calculateFantasyProjections = (gameData, teamAbbr) => {
@@ -515,6 +565,7 @@ export default function App() {
       }
 
       let gamesWithIds = [];
+      let useApiSportsForOdds = false;
 
       if (apiKey.trim()) {
         try {
@@ -531,7 +582,25 @@ export default function App() {
             }
           }
         } catch (apiError) {
-          console.warn("Odds API unavailable:", apiError);
+          console.warn("The Odds API unavailable:", apiError);
+        }
+      }
+
+      if (gamesWithIds.length === 0 && apiSportsKey && selectedSport === "americanfootball_nfl") {
+        const today = new Date().toISOString().split('T')[0];
+        const apiSportsGames = await fetchApiSportsOdds(today);
+        
+        if (apiSportsGames && apiSportsGames.length > 0) {
+          useApiSportsForOdds = true;
+          gamesWithIds = apiSportsGames.map((game, index) => ({
+            id: game.game.id || ("apisports_" + index),
+            sport_key: selectedSport,
+            commence_time: game.game.date.date,
+            home_team: game.teams.home.name,
+            away_team: game.teams.away.name,
+            bookmakers: [],
+            apiSportsOdds: game.odds || []
+          }));
         }
       }
 
@@ -578,10 +647,11 @@ export default function App() {
           
           if (matchingDatasetGame) {
             return Object.assign({}, oddsGame, {
-              datasetGame: matchingDatasetGame.datasetGame
+              datasetGame: matchingDatasetGame.datasetGame,
+              useApiSportsOdds: useApiSportsForOdds
             });
           }
-          return oddsGame;
+          return Object.assign({}, oddsGame, { useApiSportsOdds: useApiSportsForOdds });
         });
       } else {
         gamesWithIds = datasetGames;
@@ -599,8 +669,8 @@ export default function App() {
         if (!hasValidTeams) continue;
         
         Promise.all([
-          fetchESPNData(game.home_team, selectedSport),
-          fetchESPNData(game.away_team, selectedSport)
+          apiSportsKey ? fetchApiSportsInjuries(game.home_team, selectedSport) : fetchESPNData(game.home_team, selectedSport),
+          apiSportsKey ? fetchApiSportsInjuries(game.away_team, selectedSport) : fetchESPNData(game.away_team, selectedSport)
         ]).then(([homeData, awayData]) => {
           setEspnDataCache(prev => (Object.assign({}, prev, {
             [game.id]: { 
@@ -636,9 +706,17 @@ export default function App() {
       
       let marketData = null;
       let hasMarketData = false;
-      if (game.bookmakers && game.bookmakers.length > 0) {
+      
+      if (game.useApiSportsOdds && game.apiSportsOdds && game.apiSportsOdds.length > 0) {
+        marketData = {
+          source: 'api-sports',
+          odds: game.apiSportsOdds
+        };
+        hasMarketData = true;
+      } else if (game.bookmakers && game.bookmakers.length > 0) {
         const book = game.bookmakers[0];
         marketData = {
+          source: 'the-odds-api',
           spread: book.markets.find(m => m.key === 'spreads'),
           total: book.markets.find(m => m.key === 'totals'),
           moneyline: book.markets.find(m => m.key === 'h2h')
@@ -662,17 +740,19 @@ export default function App() {
       const dataSourceStatus = {
         dataset: true,
         marketOdds: hasMarketData,
+        marketSource: marketData ? marketData.source : null,
         nfeloModel: !!nfeloPrediction,
         injuries: !!(espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
+        injurySource: espnData ? (espnData.home.source === 'api-sports' ? 'api-sports' : 'espn') : null,
         enhancedStats: !!game.hasBackendData
       };
 
       let prompt = "=== DATA SOURCE STATUS ===\n";
       prompt += "Dataset: AVAILABLE\n";
-      prompt += "Market Odds: " + (hasMarketData ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
-      prompt += "nfelo Model: " + (nfeloPrediction ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
-      prompt += "Injury Data: " + (dataSourceStatus.injuries ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
-      prompt += "Enhanced Stats: " + (game.hasBackendData ? "AVAILABLE" : "NOT AVAILABLE") + "\n\n";
+      prompt += "Market Odds: " + (hasMarketData ? "AVAILABLE (" + (marketData.source === 'api-sports' ? 'API-Sports' : 'The Odds API') + ")" : "NOT AVAILABLE") + "\n";
+      prompt += "nfelo Model: " + (nfeloPrediction ? "AVAILABLE" : "NOT AVAILABLE (no longer publicly available)") + "\n";
+      prompt += "Injury Data: " + (dataSourceStatus.injuries ? "AVAILABLE (" + (dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN') + ")" : "NOT AVAILABLE") + "\n";
+      prompt += "Enhanced Stats: " + (game.hasBackendData ? "AVAILABLE (Backend)" : "NOT AVAILABLE") + "\n\n";
 
       if (dataWarnings.length > 0) {
         prompt += "=== DATA QUALITY WARNINGS ===\n";
@@ -719,6 +799,7 @@ export default function App() {
       
       if (marketData) {
         prompt += "=== MARKET ODDS (for ensemble) ===\n";
+        prompt += "Source: " + marketData.source + "\n";
         prompt += JSON.stringify(marketData, null, 2) + "\n\n";
       }
       
@@ -737,6 +818,7 @@ export default function App() {
       
       if (espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)) {
         prompt += "=== DETAILED INJURY REPORTS ===\n";
+        prompt += "Source: " + (espnData.home.source === 'api-sports' ? 'API-Sports' : 'ESPN') + "\n";
         prompt += "Home (" + game.home_team + "): " + espnData.home.injuries.length + " injuries\n";
         if (espnData.home.injuries.length > 0) {
           espnData.home.injuries.forEach(inj => {
@@ -833,9 +915,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.1</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.2</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Fixed Formulas • Ensemble Modeling • Fantasy Projections • API Validation
+          Full API-Sports Integration • Fixed Formulas • Ensemble Modeling • Fantasy Projections
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -860,19 +942,48 @@ export default function App() {
         </div>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
-          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Optional: Market Odds</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px" }}>
+          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. API Configuration</h2>
+          
+          <div style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#e8f5e9", borderRadius: "6px", border: "2px solid #4caf50" }}>
+            <div style={{ fontSize: "14px", fontWeight: "600", color: "#2e7d32", marginBottom: "8px" }}>
+              ⭐ RECOMMENDED: API-Sports (All-in-One Solution)
+            </div>
+            <div style={{ fontSize: "12px", color: "#495057", marginBottom: "10px" }}>
+              API-Sports provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Statistics</strong>, Games, Standings, and more!
+              <br />
+              Free tier: 100 requests/day. Paid plans start at $10/month.
+              <br />
+              Sign up at: <a href="https://api-sports.io" target="_blank" rel="noopener noreferrer" style={{ color: "#2e7d32", fontWeight: "600" }}>api-sports.io</a>
+            </div>
+            <input
+              type="password"
+              value={apiSportsKey}
+              onChange={(e) => setApiSportsKey(e.target.value)}
+              placeholder="API-Sports Key (recommended for injuries & odds)"
+              style={{ width: "100%", padding: "8px", border: "2px solid #4caf50", borderRadius: "4px", marginBottom: "8px" }}
+            />
+            {apiSportsKey && (
+              <div style={{ fontSize: "11px", color: "#155724", fontWeight: "600" }}>
+                ✓ API-Sports will be used for injuries and as fallback for odds (if The Odds API unavailable)
+              </div>
+            )}
+          </div>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px", marginTop: "15px" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
-                The Odds API Key (optional - for live betting lines)
+                The Odds API Key (optional - primary odds source)
               </label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="API Key"
+                placeholder="The Odds API Key"
                 style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
               />
+              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>
+                Get your key at: <a href="https://the-odds-api.com" target="_blank" rel="noopener noreferrer">the-odds-api.com</a>
+              </div>
             </div>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
@@ -894,10 +1005,13 @@ export default function App() {
             {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
 
-          {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
-            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px" }}>
-              <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724" }}>
-                ✓ nfelo NFL Model Active
+          {selectedSport === "americanfootball_nfl" && (
+            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+              <div style={{ fontSize: "12px", fontWeight: "600", color: "#856404", marginBottom: "4px" }}>
+                ⚠ nfelo Model Unavailable
+              </div>
+              <div style={{ fontSize: "11px", color: "#856404" }}>
+                nfelo no longer provides public API access after their rebuild. Ensemble modeling will use Model + Market Odds only.
               </div>
             </div>
           )}
@@ -942,7 +1056,7 @@ export default function App() {
                           </span>
                           {analysis.dataSourceStatus.marketOdds ? (
                             <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
-                              ✓ Market Odds
+                              ✓ Market Odds ({analysis.dataSourceStatus.marketSource === 'api-sports' ? 'API-Sports' : 'The Odds API'})
                             </span>
                           ) : (
                             <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
@@ -960,7 +1074,7 @@ export default function App() {
                           )}
                           {analysis.dataSourceStatus.injuries && (
                             <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                              ⚠ Injuries Detected
+                              ⚠ Injuries ({analysis.dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN'})
                             </span>
                           )}
                           {analysis.dataSourceStatus.enhancedStats && (
@@ -1070,7 +1184,7 @@ export default function App() {
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.1: API validation • Data quality warnings • Fixed fantasy projections • Ensemble fallback • Call 1-800-GAMBLER
+            v2.2: Full API-Sports integration (injuries + odds fallback) • Data validation • Fixed fantasy • nfelo notice • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
