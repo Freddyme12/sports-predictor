@@ -157,12 +157,13 @@ export default function App() {
     if (!apiSportsKey) return null;
 
     try {
+      const headers = {
+        'x-apisports-key': apiSportsKey
+      };
+
       const response = await fetch('https://v1.american-football.api-sports.io/games?season=2025&date=' + gameDate, {
         method: 'GET',
-        headers: {
-          'x-rapidapi-host': 'v1.american-football.api-sports.io',
-          'x-rapidapi-key': apiSportsKey
-        }
+        headers: headers
       });
 
       if (!response.ok) return null;
@@ -186,12 +187,13 @@ export default function App() {
         return { team: teamName, injuries: [], source: 'unsupported-sport' };
       }
 
+      const headers = {
+        'x-apisports-key': apiSportsKey
+      };
+
       const response = await fetch(apiUrl + '?name=' + encodeURIComponent(teamName), {
         method: 'GET',
-        headers: {
-          'x-rapidapi-host': 'v1.american-football.api-sports.io',
-          'x-rapidapi-key': apiSportsKey
-        }
+        headers: headers
       });
 
       if (!response.ok) {
@@ -205,10 +207,7 @@ export default function App() {
         
         const injuryResponse = await fetch('https://v1.american-football.api-sports.io/injuries?team=' + teamId + '&season=2025', {
           method: 'GET',
-          headers: {
-            'x-rapidapi-host': 'v1.american-football.api-sports.io',
-            'x-rapidapi-key': apiSportsKey
-          }
+          headers: headers
         });
 
         if (injuryResponse.ok) {
