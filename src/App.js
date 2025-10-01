@@ -11,70 +11,45 @@ export default function App() {
   const [parsedDataset, setParsedDataset] = useState(null);
   const [datasetLoaded, setDatasetLoaded] = useState(false);
   const [espnDataCache, setEspnDataCache] = useState({});
-  const [nfeloData, setNfeloData] = useState(null);
-  const [nfeloAvailable, setNfeloAvailable] = useState(false);
   const [backendDataCache, setBackendDataCache] = useState({});
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
-  const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
-  const [predictionTracking, setPredictionTracking] = useState([]);
   const [apiSportsKey, setApiSportsKey] = useState("");
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  const systemPrompt = `You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.
+  const systemPrompt = `You are an advanced sports analyst. You receive pre-compiled data with all values already extracted and verified.
 
-=== JSON DATA STRUCTURE GUIDE ===
-NFL Data Location:
-- EPA: team_statistics.[TEAM_ABBR].offense.epa_per_play.overall
-- Success Rate: team_statistics.[TEAM_ABBR].offense.success_rate.overall
-- Explosive Plays: team_statistics.[TEAM_ABBR].offense.explosive_play_pct
-- Pass Block Win Rate: team_statistics.[TEAM_ABBR].offense.pass_block_win_rate
-- 3rd Down: team_statistics.[TEAM_ABBR].offense.third_down_conversion_rate
-- Red Zone: team_statistics.[TEAM_ABBR].offense.red_zone_scoring.td_rate
+=== YOUR JOB ===
+Analyze the game using the compiled statistics provided. All data extraction has already been done - you just need to apply formulas and provide analysis.
 
-CFB Data Location:
-- SP+: team_data.home.sp_overall or team_data.away.sp_overall
-- Off Success Rate: team_data.home.off_success_rate
-- Def Success Rate: team_data.home.def_success_rate (LOWER = BETTER)
-- Explosiveness: team_data.home.off_explosiveness
-- Havoc Rate: team_data.home.havoc_rate
-
-CRITICAL: Always extract values from the correct nested path. Do NOT assume values are zero if you can't find them immediately - check the full JSON structure carefully. If you see a value like -0.0217 or 0.0049, that is a REAL value, not zero.
-
-=== FORMULA CORRECTIONS ===
-CFB Defensive Success Rate - CORRECTED: LOWER defensive success rate = BETTER defense.
-
-CFB Spread Formula:
+=== FORMULAS ===
+CFB Spread:
 SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def SR) × 180 × 0.18 + Explosiveness × 25 × 0.10 + Havoc × 120 × 0.05 + Home 3.5
 
-NFL Spread Formula:
-EPA diff × 320 × 0.40 + Success Rate diff × 250 × 0.25 + Explosive diff × 150 × 0.15 + 3rd Down diff × 100 × 0.10 + Red Zone diff × 80 × 0.10 + Home 2.5 + O-Line adjustment
+NFL Spread:
+EPA diff × 320 × 0.40 + Success Rate diff × 250 × 0.25 + Explosive diff × 150 × 0.15 + 3rd Down diff × 100 × 0.10 + Red Zone diff × 80 × 0.10 + Home 2.5 + O-Line
 
-=== INJURY IMPACT ===
-NFL: QB 5.5pts, RB 1.2, WR 1.0, TE 0.6, OL 0.5
-CFB: QB 7.0pts, RB 2.0, WR 1.5, TE 1.0, OL 1.0
+Injury Impact: Already calculated and provided in points
 
 === ENSEMBLE WEIGHTING ===
-Full ensemble: Model 50%, nfelo 25%, Market 25%
-If nfelo unavailable: Model 67%, Market 33%
-If Market unavailable: Model 67%, nfelo 33%
-If both unavailable: Model 100% (reduce confidence by 1 tier)
+- If Market available: Model 67%, Market 33%
+- If Market unavailable: Model 100% (reduce confidence by 1 tier)
+- Consensus < 2pts difference = +1 confidence tier
 
-Consensus < 2pts difference = +1 confidence tier
+=== OUTPUT FORMAT ===
+1. Data Source Summary
+2. Statistical Breakdown (show the actual numbers you're using)
+3. Model Calculation (show each step with numbers)
+4. Injury Adjustment (if applicable)
+5. Market Comparison (if available)
+6. Final Ensemble Prediction
+7. Confidence Level (1-5 stars, adjusted for data availability)
+8. Key Factors
+9. Betting Recommendation (educational context only)
 
-=== FANTASY PROJECTIONS ===
-NFL only: QB pass yds/TDs, rush yds. RB rush/rec. WR/TE targets/rec/yds. Full PPR scoring.
-For fantasy/DFS only - NOT for prop betting.
-
-=== CRITICAL INSTRUCTIONS ===
-1. ALWAYS show your data extraction first - prove you found the correct values
-2. Show the exact JSON path you used for each statistic
-3. If a value seems to be zero, double-check the JSON structure before concluding
-4. Clearly state if data is missing vs. actually zero (e.g., -0.02 is NOT zero)
-5. Show all calculation steps with actual numbers
-6. Educational purposes only - this is NOT investment advice`;
+Always show your math. Educational purposes only - not investment advice.`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -171,35 +146,6 @@ For fantasy/DFS only - NOT for prop betting.
     }
   };
 
-  const fetchNfeloData = async () => {
-    setNfeloAvailable(false);
-    return null;
-  };
-
-  const findNfeloPrediction = (game) => {
-    if (!nfeloData || !nfeloAvailable) return null;
-    if (!game.home_team || !game.away_team) return null;
-    
-    const normalizeTeamName = (name) => {
-      return (name || '').toLowerCase().replace(/[^a-z]/g, '');
-    };
-    
-    const gameHome = normalizeTeamName(game.home_team);
-    const gameAway = normalizeTeamName(game.away_team);
-    
-    if (!gameHome || !gameAway) return null;
-    
-    const predictions = nfeloData.games || nfeloData.predictions || [];
-    
-    return predictions.find(pred => {
-      const predHome = normalizeTeamName(pred.home_team || pred.home || '');
-      const predAway = normalizeTeamName(pred.away_team || pred.away || '');
-      
-      return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
-             (gameAway.includes(predAway) || predAway.includes(gameAway));
-    });
-  };
-
   const fetchApiSportsOddsViaBackend = async (sport, gameDate) => {
     if (!apiSportsKey) return null;
 
@@ -227,99 +173,6 @@ For fantasy/DFS only - NOT for prop betting.
       return data.odds || [];
     } catch (error) {
       console.error('API-Sports odds fetch error:', error);
-      return null;
-    }
-  };
-
-  const fetchApiSportsPlayersViaBackend = async (teamName, sport) => {
-    if (!apiSportsKey || !teamName) return null;
-
-    try {
-      const sportMap = {
-        'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football',
-        'basketball_nba': 'basketball/nba',
-        'baseball_mlb': 'baseball/mlb',
-        'icehockey_nhl': 'hockey/nhl'
-      };
-      
-      const sportPath = sportMap[sport] || 'football/nfl';
-      const response = await fetch(
-        `${BACKEND_URL}/api/apisports-players?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
-        {
-          headers: {
-            'x-api-key': apiSportsKey
-          }
-        }
-      );
-
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.players || [];
-    } catch (error) {
-      console.error('API-Sports players fetch error:', error);
-      return null;
-    }
-  };
-
-  const fetchApiSportsStatsViaBackend = async (teamName, sport) => {
-    if (!apiSportsKey || !teamName) return null;
-
-    try {
-      const sportMap = {
-        'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football',
-        'basketball_nba': 'basketball/nba',
-        'baseball_mlb': 'baseball/mlb',
-        'icehockey_nhl': 'hockey/nhl'
-      };
-      
-      const sportPath = sportMap[sport] || 'football/nfl';
-      const response = await fetch(
-        `${BACKEND_URL}/api/apisports-stats?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
-        {
-          headers: {
-            'x-api-key': apiSportsKey
-          }
-        }
-      );
-
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.statistics || null;
-    } catch (error) {
-      console.error('API-Sports stats fetch error:', error);
-      return null;
-    }
-  };
-
-  const fetchApiSportsGamesViaBackend = async (sport, date) => {
-    if (!apiSportsKey) return null;
-
-    try {
-      const sportMap = {
-        'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football',
-        'basketball_nba': 'basketball/nba',
-        'baseball_mlb': 'baseball/mlb',
-        'icehockey_nhl': 'hockey/nhl'
-      };
-      
-      const sportPath = sportMap[sport] || 'football/nfl';
-      const response = await fetch(
-        `${BACKEND_URL}/api/apisports-games?sport=${encodeURIComponent(sportPath)}&date=${date}`,
-        {
-          headers: {
-            'x-api-key': apiSportsKey
-          }
-        }
-      );
-
-      if (!response.ok) return null;
-      const data = await response.json();
-      return data.games || [];
-    } catch (error) {
-      console.error('API-Sports games fetch error:', error);
       return null;
     }
   };
@@ -376,8 +229,6 @@ For fantasy/DFS only - NOT for prop betting.
     }
 
     const playerStats = gameData.player_statistics[teamAbbr];
-    const teamStats = gameData.team_statistics ? gameData.team_statistics[teamAbbr] : null;
-    
     const projections = {
       quarterbacks: [],
       runningBacks: [],
@@ -484,7 +335,7 @@ For fantasy/DFS only - NOT for prop betting.
 
   const quantifyInjuryImpact = (espnData, isCFB) => {
     if (!espnData || !espnData.home || !espnData.away) {
-      return { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0 };
+      return { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0, details: [] };
     }
 
     const cfbImpactScores = {
@@ -508,6 +359,7 @@ For fantasy/DFS only - NOT for prop betting.
     const calculateInjuries = (injuries) => {
       const positionCount = {};
       let totalImpact = 0;
+      const details = [];
 
       injuries.forEach(inj => {
         const headline = inj.headline.toLowerCase();
@@ -520,6 +372,7 @@ For fantasy/DFS only - NOT for prop betting.
           if (headline.includes(pos)) {
             impact = Math.max(impact, impactScores[pos]);
             positionCount[pos] = (positionCount[pos] || 0) + 1;
+            details.push({ headline: inj.headline, impact: impact * severity, position: pos });
             break;
           }
         }
@@ -538,86 +391,146 @@ For fantasy/DFS only - NOT for prop betting.
         totalImpact += 1.0;
       }
 
-      return totalImpact;
+      return { impact: totalImpact, details };
     };
 
-    const homeImpact = calculateInjuries(espnData.home.injuries || []);
-    const awayImpact = calculateInjuries(espnData.away.injuries || []);
+    const homeResult = calculateInjuries(espnData.home.injuries || []);
+    const awayResult = calculateInjuries(espnData.away.injuries || []);
 
     return {
-      home: homeImpact,
-      away: awayImpact,
-      total: homeImpact + awayImpact,
-      differential: homeImpact - awayImpact,
-      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 3.5), 2)
+      home: homeResult.impact,
+      away: awayResult.impact,
+      total: homeResult.impact + awayResult.impact,
+      differential: homeResult.impact - awayResult.impact,
+      confidenceReduction: Math.min(Math.floor((homeResult.impact + awayResult.impact) / 3.5), 2),
+      details: {
+        home: homeResult.details,
+        away: awayResult.details
+      }
     };
   };
 
-  const validateDataRanges = (gameData, advancedFeatures) => {
-    const warnings = [];
+  // STEP 2: COMPILE ALL DATA INTO CLEAN FORMAT
+  const compileAllGameData = (game, gameData, espnData, marketData, fantasyData) => {
+    const isCFB = gameData.team_data !== undefined;
     
-    if (advancedFeatures) {
-      if (advancedFeatures.sport === 'NFL') {
-        if (Math.abs(advancedFeatures.homeEPA) < 0.01 && Math.abs(advancedFeatures.awayEPA) < 0.01) {
-          warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
-        }
-        if (Math.abs(advancedFeatures.homeEPA) > 0.5 || Math.abs(advancedFeatures.awayEPA) > 0.5) {
-          warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
-        }
+    // Calculate injury impact
+    const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
+    
+    const compiled = {
+      sport: isCFB ? 'CFB' : 'NFL',
+      matchup: {
+        home_team: game.home_team,
+        away_team: game.away_team,
+        date: new Date(game.commence_time).toLocaleString()
+      },
+      team_statistics: {},
+      injuries: {
+        available: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
+        source: espnData?.home?.source || 'none',
+        home_impact_points: injuryImpact?.home || 0,
+        away_impact_points: injuryImpact?.away || 0,
+        net_differential_points: injuryImpact?.differential || 0,
+        confidence_reduction_tiers: injuryImpact?.confidenceReduction || 0,
+        home_injury_count: espnData?.home?.injuries?.length || 0,
+        away_injury_count: espnData?.away?.injuries?.length || 0,
+        home_injuries: espnData?.home?.injuries || [],
+        away_injuries: espnData?.away?.injuries || []
+      },
+      market_odds: null,
+      fantasy_projections: fantasyData,
+      data_quality: {
+        dataset_available: true,
+        backend_enhanced: !!game.hasBackendData,
+        injury_data_available: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
+        market_odds_available: false
       }
-      
-      if (advancedFeatures.sport === 'CFB') {
-        if (Math.abs(advancedFeatures.spPlusDiff) > 50) {
-          warnings.push("WARNING: SP+ differential extremely large. This suggests a major mismatch.");
-        }
+    };
+    
+    // Extract team statistics based on sport
+    if (isCFB) {
+      try {
+        compiled.team_statistics = {
+          home: {
+            sp_plus: gameData.team_data.home.sp_overall || 0,
+            off_success_rate: gameData.team_data.home.off_success_rate || 0,
+            def_success_rate: gameData.team_data.home.def_success_rate || 0,
+            explosiveness: gameData.team_data.home.off_explosiveness || 0,
+            havoc_rate: gameData.team_data.home.havoc_rate || 0,
+            ppg: gameData.team_data.home.points_per_game || 0
+          },
+          away: {
+            sp_plus: gameData.team_data.away.sp_overall || 0,
+            off_success_rate: gameData.team_data.away.off_success_rate || 0,
+            def_success_rate: gameData.team_data.away.def_success_rate || 0,
+            explosiveness: gameData.team_data.away.off_explosiveness || 0,
+            havoc_rate: gameData.team_data.away.havoc_rate || 0,
+            ppg: gameData.team_data.away.points_per_game || 0
+          }
+        };
+      } catch (e) {
+        console.error('CFB data extraction error:', e);
+      }
+    } else {
+      try {
+        const homeTeam = gameData.teams.home;
+        const awayTeam = gameData.teams.away;
+        const homeStats = gameData.team_statistics[homeTeam];
+        const awayStats = gameData.team_statistics[awayTeam];
+        
+        compiled.team_statistics = {
+          home: {
+            team_abbr: homeTeam,
+            epa: homeStats.offense.epa_per_play.overall,
+            success_rate: homeStats.offense.success_rate.overall,
+            explosive_pct: homeStats.offense.explosive_play_pct,
+            pass_block_win_rate: homeStats.offense.pass_block_win_rate,
+            third_down_rate: homeStats.offense.third_down_conversion_rate,
+            redzone_td_rate: homeStats.offense.red_zone_scoring.td_rate
+          },
+          away: {
+            team_abbr: awayTeam,
+            epa: awayStats.offense.epa_per_play.overall,
+            success_rate: awayStats.offense.success_rate.overall,
+            explosive_pct: awayStats.offense.explosive_play_pct,
+            pass_block_win_rate: awayStats.offense.pass_block_win_rate,
+            third_down_rate: awayStats.offense.third_down_conversion_rate,
+            redzone_td_rate: awayStats.offense.red_zone_scoring.td_rate
+          }
+        };
+      } catch (e) {
+        console.error('NFL data extraction error:', e);
       }
     }
     
-    return warnings;
-  };
-
-  const calculateAdvancedFeatures = (gameData) => {
-    if (!gameData) return null;
-
-    if (gameData.team_data) {
-      const home = gameData.team_data.home;
-      const away = gameData.team_data.away;
-      if (!home || !away) return null;
-
-      const hasValidData = home.sp_overall !== undefined || home.off_success_rate !== undefined;
-      if (!hasValidData) return null;
-
-      return {
-        sport: 'CFB',
-        spPlusDiff: (home.sp_overall || 0) - (away.sp_overall || 0),
-        offSuccessRateDiff: (home.off_success_rate || 0) - (away.off_success_rate || 0),
-        defSuccessRateAdvantage: (away.def_success_rate || 0) - (home.def_success_rate || 0),
-        explosivenessDiff: (home.off_explosiveness || 0) - (away.off_explosiveness || 0),
-        havocRateDiff: (home.havoc_rate || 0) - (away.havoc_rate || 0),
-        homePPG: home.points_per_game || 0,
-        awayPPG: away.points_per_game || 0
-      };
-    }
-
-    const teamStats = gameData.team_statistics;
-    if (teamStats) {
-      const homeTeam = gameData.teams && gameData.teams.home;
-      const awayTeam = gameData.teams && gameData.teams.away;
-      const home = teamStats[homeTeam];
-      const away = teamStats[awayTeam];
+    // Compile market odds
+    if (marketData) {
+      compiled.data_quality.market_odds_available = true;
       
-      if (!home || !away) return null;
-
-      return {
-        sport: 'NFL',
-        homeEPA: home.offense && home.offense.epa_per_play && home.offense.epa_per_play.overall || 0,
-        awayEPA: away.offense && away.offense.epa_per_play && away.offense.epa_per_play.overall || 0,
-        homeSuccessRate: home.offense && home.offense.success_rate && home.offense.success_rate.overall || 0,
-        awaySuccessRate: away.offense && away.offense.success_rate && away.offense.success_rate.overall || 0
-      };
+      if (marketData.source === 'the-odds-api') {
+        const spread = marketData.spread?.outcomes || [];
+        const total = marketData.total?.outcomes || [];
+        const moneyline = marketData.moneyline?.outcomes || [];
+        
+        const homeSpread = spread.find(o => o.name === game.home_team);
+        const awaySpread = spread.find(o => o.name === game.away_team);
+        
+        compiled.market_odds = {
+          source: 'the-odds-api',
+          spread: homeSpread ? homeSpread.point : null,
+          total: total.length > 0 ? total[0].point : null,
+          home_moneyline: moneyline.find(o => o.name === game.home_team)?.price,
+          away_moneyline: moneyline.find(o => o.name === game.away_team)?.price
+        };
+      } else if (marketData.source === 'api-sports' && marketData.odds && marketData.odds.length > 0) {
+        compiled.market_odds = {
+          source: 'api-sports',
+          raw: marketData.odds[0]
+        };
+      }
     }
-
-    return null;
+    
+    return compiled;
   };
 
   const getTeamAbbreviation = (teamName, sport) => {
@@ -697,10 +610,6 @@ For fantasy/DFS only - NOT for prop betting.
         setError("Please load a JSON dataset first.");
         setLoading(false);
         return;
-      }
-
-      if (selectedSport === "americanfootball_nfl") {
-        await fetchNfeloData();
       }
 
       let gamesWithIds = [];
@@ -827,6 +736,7 @@ For fantasy/DFS only - NOT for prop betting.
     }
   };
 
+  // STEP 3: AI ANALYZES USING COMPILED DATA
   const analyzeGame = async (game) => {
     setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: true } })));
 
@@ -834,14 +744,7 @@ For fantasy/DFS only - NOT for prop betting.
       const gameData = game.datasetGame;
       if (!gameData) throw new Error("No dataset found");
 
-      const advancedFeatures = calculateAdvancedFeatures(gameData);
-      const isCFB = advancedFeatures && advancedFeatures.sport === 'CFB';
-      const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
-      
       const espnData = espnDataCache[game.id];
-      const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
-      
-      const dataWarnings = validateDataRanges(gameData, advancedFeatures);
       
       let marketData = null;
       let hasMarketData = false;
@@ -863,7 +766,9 @@ For fantasy/DFS only - NOT for prop betting.
         hasMarketData = true;
       }
       
+      const isCFB = gameData.team_data !== undefined;
       let fantasyData = null;
+      
       if (!isCFB && gameData.player_statistics) {
         const homeTeam = gameData.teams && gameData.teams.home;
         const awayTeam = gameData.teams && gameData.teams.away;
@@ -876,138 +781,28 @@ For fantasy/DFS only - NOT for prop betting.
         }
       }
 
-      const dataSourceStatus = {
-        dataset: true,
-        marketOdds: hasMarketData,
-        marketSource: marketData ? marketData.source : null,
-        nfeloModel: !!nfeloPrediction,
-        injuries: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
-        injurySource: espnData ? (espnData.home.source === 'api-sports' ? 'api-sports' : 'espn') : null,
-        enhancedStats: !!game.hasBackendData
-      };
+      // STEP 2: Compile all data
+      const compiledData = compileAllGameData(game, gameData, espnData, marketData, fantasyData);
+      
+      // Debug log
+      console.log('=== COMPILED DATA ===');
+      console.log(compiledData);
 
-      let prompt = "=== DATA SOURCE STATUS ===\n";
-      prompt += "Dataset: AVAILABLE\n";
-      prompt += "Market Odds: " + (hasMarketData ? "AVAILABLE (" + (marketData.source === 'api-sports' ? 'API-Sports' : 'The Odds API') + ")" : "NOT AVAILABLE") + "\n";
-      prompt += "nfelo Model: " + (nfeloPrediction ? "AVAILABLE" : "NOT AVAILABLE (no longer publicly available)") + "\n";
-      prompt += "Injury Data: " + (dataSourceStatus.injuries ? "AVAILABLE (" + (dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN') + ")" : "NOT AVAILABLE") + "\n";
-      prompt += "Enhanced Stats: " + (game.hasBackendData ? "AVAILABLE (Backend)" : "NOT AVAILABLE") + "\n\n";
-
-      if (dataWarnings.length > 0) {
-        prompt += "=== DATA QUALITY WARNINGS ===\n";
-        dataWarnings.forEach(warning => {
-          prompt += warning + "\n";
-        });
-        prompt += "\n";
-      }
-
-      prompt += "=== ENSEMBLE MODELING STATUS ===\n";
-      const availableComponents = [];
-      if (true) availableComponents.push("Model (50%)");
-      if (nfeloPrediction) availableComponents.push("nfelo (25%)");
-      if (hasMarketData) availableComponents.push("Market (25%)");
-      
-      prompt += "Active Components: " + availableComponents.join(", ") + "\n";
-      
-      if (!nfeloPrediction && !hasMarketData) {
-        prompt += "WARNING: Ensemble modeling degraded. Using MODEL ONLY (100% weight).\n";
-        prompt += "Confidence should be reduced by 1 tier due to lack of validation sources.\n\n";
-      } else if (!nfeloPrediction || !hasMarketData) {
-        const missingSource = !nfeloPrediction ? "nfelo" : "Market";
-        prompt += "NOTICE: " + missingSource + " unavailable. Redistributing weight to available sources.\n";
-        if (nfeloPrediction && !hasMarketData) {
-          prompt += "Adjusted weights: Model 67%, nfelo 33%\n\n";
-        } else if (!nfeloPrediction && hasMarketData) {
-          prompt += "Adjusted weights: Model 67%, Market 33%\n\n";
-        }
-      } else {
-        prompt += "Full ensemble available.\n\n";
-      }
-
-      prompt += "=== GAME ANALYSIS ===\n";
-      prompt += "Matchup: " + game.away_team + " @ " + game.home_team + "\n";
-      prompt += "Sport: " + (isCFB ? 'COLLEGE FOOTBALL' : 'NFL') + "\n\n";
-      
-      prompt += "=== PRIMARY DATASET ===\n";
-      prompt += JSON.stringify(gameData, null, 2) + "\n\n";
-      
-      if (advancedFeatures) {
-        prompt += "=== CALCULATED FEATURES (from dataset) ===\n";
-        prompt += JSON.stringify(advancedFeatures, null, 2) + "\n\n";
-      }
-      
-      if (marketData) {
-        prompt += "=== MARKET ODDS (for ensemble) ===\n";
-        prompt += "Source: " + marketData.source + "\n";
-        prompt += JSON.stringify(marketData, null, 2) + "\n\n";
-      }
-      
-      if (nfeloPrediction) {
-        prompt += "=== NFELO PREDICTION (for ensemble) ===\n";
-        prompt += JSON.stringify(nfeloPrediction, null, 2) + "\n\n";
-      }
-      
-      if (injuryImpact) {
-        prompt += "=== INJURY IMPACT ANALYSIS ===\n";
-        prompt += "Home Team Impact: " + injuryImpact.home.toFixed(1) + " points\n";
-        prompt += "Away Team Impact: " + injuryImpact.away.toFixed(1) + " points\n";
-        prompt += "Net Differential: " + injuryImpact.differential.toFixed(1) + " points (favoring " + (injuryImpact.differential > 0 ? "Away" : "Home") + ")\n";
-        prompt += "Confidence Reduction: -" + injuryImpact.confidenceReduction + " tiers\n\n";
-      }
-      
-      if (espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)) {
-        prompt += "=== DETAILED INJURY REPORTS ===\n";
-        prompt += "Source: " + (espnData.home.source === 'api-sports' ? 'API-Sports' : 'ESPN') + "\n";
-        prompt += "Home (" + game.home_team + "): " + espnData.home.injuries.length + " injuries\n";
-        if (espnData.home.injuries.length > 0) {
-          espnData.home.injuries.forEach(inj => {
-            prompt += "  - " + inj.headline + "\n";
-          });
-        }
-        prompt += "\nAway (" + game.away_team + "): " + espnData.away.injuries.length + " injuries\n";
-        if (espnData.away.injuries.length > 0) {
-          espnData.away.injuries.forEach(inj => {
-            prompt += "  - " + inj.headline + "\n";
-          });
-        }
-        prompt += "\n";
-      }
+      // Build prompt with compiled data
+      let prompt = "=== COMPILED GAME DATA ===\n";
+      prompt += "All data has been pre-extracted and verified by JavaScript. Use these values directly.\n\n";
+      prompt += JSON.stringify(compiledData, null, 2) + "\n\n";
       
       prompt += "=== ANALYSIS INSTRUCTIONS ===\n";
-      prompt += "STEP 1: DATA EXTRACTION VERIFICATION\n";
-      prompt += "Before any calculations, you MUST explicitly extract and display the raw values from the JSON:\n\n";
-      
-      if (isCFB) {
-        prompt += "For CFB, extract from team_data:\n";
-        prompt += "- Home SP+: team_data.home.sp_overall = ?\n";
-        prompt += "- Away SP+: team_data.away.sp_overall = ?\n";
-        prompt += "- Home Off Success Rate: team_data.home.off_success_rate = ?\n";
-        prompt += "- Away Off Success Rate: team_data.away.off_success_rate = ?\n";
-        prompt += "- Home Def Success Rate: team_data.home.def_success_rate = ?\n";
-        prompt += "- Away Def Success Rate: team_data.away.def_success_rate = ?\n\n";
-      } else {
-        const homeTeam = gameData.teams && gameData.teams.home;
-        const awayTeam = gameData.teams && gameData.teams.away;
-        prompt += "For NFL, extract from team_statistics (Team abbreviations: Home=" + homeTeam + ", Away=" + awayTeam + "):\n";
-        prompt += "- Home EPA: team_statistics." + homeTeam + ".offense.epa_per_play.overall = ?\n";
-        prompt += "- Away EPA: team_statistics." + awayTeam + ".offense.epa_per_play.overall = ?\n";
-        prompt += "- Home Success Rate: team_statistics." + homeTeam + ".offense.success_rate.overall = ?\n";
-        prompt += "- Away Success Rate: team_statistics." + awayTeam + ".offense.success_rate.overall = ?\n";
-        prompt += "- Home Pass Block Win Rate: team_statistics." + homeTeam + ".offense.pass_block_win_rate = ?\n";
-        prompt += "- Away Pass Block Win Rate: team_statistics." + awayTeam + ".offense.pass_block_win_rate = ?\n\n";
-      }
-      
-      prompt += "If you cannot find these exact values at these exact paths, state 'VALUE NOT FOUND AT THIS PATH' and describe what you see in the JSON structure instead. Do NOT assume values are zero without checking.\n\n";
-      
-      prompt += "STEP 2: Start with a clear API STATUS SUMMARY showing which data sources were used\n";
-      prompt += "STEP 3: Calculate the model-based prediction using the appropriate formula with the extracted values\n";
-      prompt += "STEP 4: Show ALL calculation steps with actual numbers (not just formulas)\n";
-      prompt += "STEP 5: If ensemble components available, blend predictions using the weights shown above\n";
-      prompt += "STEP 6: Clearly state if ensemble modeling is degraded and adjust confidence accordingly\n";
-      prompt += "STEP 7: Provide comprehensive analysis with spread prediction, total prediction, confidence level, and key factors\n";
-      prompt += "STEP 8: Note any data quality warnings in your analysis\n\n";
-      
-      prompt += "CRITICAL: Always attribute predictions to their source (Model/Market/nfelo) and explain ensemble weighting used. If values appear to be zero or missing, EXPLICITLY STATE THIS rather than proceeding with calculations.";
+      prompt += "1. Review the compiled data above\n";
+      prompt += "2. Apply the appropriate formula (CFB or NFL) using the provided statistics\n";
+      prompt += "3. Show each calculation step with actual numbers\n";
+      prompt += "4. Apply injury adjustments if injuries.home_impact_points or injuries.away_impact_points > 0\n";
+      prompt += "5. If market_odds available, create ensemble prediction (Model 67%, Market 33%)\n";
+      prompt += "6. If market_odds NOT available, use Model 100% and reduce confidence by 1 tier\n";
+      prompt += "7. Provide final prediction with confidence level (1-5 stars)\n";
+      prompt += "8. List key factors driving the prediction\n\n";
+      prompt += "CRITICAL: Show your math. This is educational analysis only.";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -1036,10 +831,8 @@ For fantasy/DFS only - NOT for prop betting.
         [game.id]: { 
           loading: false, 
           text: analysis,
-          fantasyData: fantasyData,
-          nfeloPrediction: nfeloPrediction,
-          dataSourceStatus: dataSourceStatus,
-          dataWarnings: dataWarnings
+          compiledData: compiledData,
+          fantasyData: fantasyData
         }
       })));
     } catch (err) {
@@ -1079,9 +872,9 @@ For fantasy/DFS only - NOT for prop betting.
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.4</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.0</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Backend Integration • API-Sports via Vercel • Fixed JSON Parsing • Fixed Injury Detection • Ensemble Modeling
+          3-Step Architecture: Extract → Compile → Analyze | No nfelo | Pure Data-Driven Analysis
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1113,11 +906,9 @@ For fantasy/DFS only - NOT for prop betting.
               ⭐ RECOMMENDED: API-Sports (All Backend Calls)
             </div>
             <div style={{ fontSize: "12px", color: "#495057", marginBottom: "10px" }}>
-              All API-Sports calls now go through your Vercel backend for security!
+              All API-Sports calls go through your Vercel backend for security!
               <br />
-              Provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Players</strong>, <strong>Stats</strong>, <strong>Games</strong>
-              <br />
-              Free tier: 100 requests/day. Paid plans start at $10/month.
+              Provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Players</strong>, <strong>Stats</strong>
               <br />
               Sign up at: <a href="https://api-sports.io" target="_blank" rel="noopener noreferrer" style={{ color: "#2e7d32", fontWeight: "600" }}>api-sports.io</a>
             </div>
@@ -1125,7 +916,7 @@ For fantasy/DFS only - NOT for prop betting.
               type="password"
               value={apiSportsKey}
               onChange={(e) => setApiSportsKey(e.target.value)}
-              placeholder="API-Sports Key (recommended for injuries & odds)"
+              placeholder="API-Sports Key (recommended)"
               style={{ width: "100%", padding: "8px", border: "2px solid #4caf50", borderRadius: "4px", marginBottom: "8px" }}
             />
             {apiSportsKey && (
@@ -1170,17 +961,6 @@ For fantasy/DFS only - NOT for prop betting.
           >
             {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
-
-          {selectedSport === "americanfootball_nfl" && (
-            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
-              <div style={{ fontSize: "12px", fontWeight: "600", color: "#856404", marginBottom: "4px" }}>
-                ⚠ nfelo Model Unavailable
-              </div>
-              <div style={{ fontSize: "11px", color: "#856404" }}>
-                nfelo no longer provides public API access after their rebuild. Ensemble modeling will use Model + Market Odds only.
-              </div>
-            </div>
-          )}
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
@@ -1209,75 +989,46 @@ For fantasy/DFS only - NOT for prop betting.
               </div>
 
               <div style={{ padding: "15px" }}>
-                {analysis && analysis.text && (
-                  <>
-                    {analysis.dataSourceStatus && (
-                      <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "6px", border: "1px solid #dee2e6" }}>
-                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#495057" }}>
-                          API Data Sources Status:
-                        </div>
-                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
-                            ✓ Dataset
-                          </span>
-                          {analysis.dataSourceStatus.marketOdds ? (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
-                              ✓ Market Odds ({analysis.dataSourceStatus.marketSource === 'api-sports' ? 'API-Sports' : 'The Odds API'})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                              ✗ Market Odds
-                            </span>
-                          )}
-                          {analysis.dataSourceStatus.nfeloModel ? (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "4px", fontWeight: "600" }}>
-                              ✓ nfelo Model
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                              ✗ nfelo Model
-                            </span>
-                          )}
-                          {analysis.dataSourceStatus.injuries ? (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
-                              ✓ Injuries ({analysis.dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN'})
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                              ✗ Injuries
-                            </span>
-                          )}
-                          {analysis.dataSourceStatus.enhancedStats && (
-                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#e2e3e5", color: "#383d41", borderRadius: "4px", fontWeight: "600" }}>
-                              ✓ Enhanced Stats
-                            </span>
-                          )}
-                        </div>
-                        {(!analysis.dataSourceStatus.marketOdds || !analysis.dataSourceStatus.nfeloModel) && (
-                          <div style={{ marginTop: "8px", fontSize: "11px", color: "#856404", fontWeight: "600" }}>
-                            ⚠ Ensemble modeling degraded - some validation sources unavailable
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {analysis.dataWarnings && analysis.dataWarnings.length > 0 && (
-                      <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
-                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
-                          Data Quality Warnings:
-                        </div>
-                        {analysis.dataWarnings.map((warning, idx) => (
-                          <div key={idx} style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
-                            • {warning}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    
-                    <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
-                      {analysis.text}
+                {analysis && analysis.compiledData && (
+                  <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "6px", border: "1px solid #dee2e6" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#495057" }}>
+                      Data Compilation Status:
                     </div>
-                  </>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
+                        ✓ Dataset Extracted
+                      </span>
+                      {analysis.compiledData.data_quality.market_odds_available ? (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ Market Odds
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "4px", fontWeight: "600" }}>
+                          ⚠ No Market Odds
+                        </span>
+                      )}
+                      {analysis.compiledData.data_quality.injury_data_available ? (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ Injuries ({analysis.compiledData.injuries.source})
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
+                          ✗ No Injury Data
+                        </span>
+                      )}
+                      {analysis.compiledData.data_quality.backend_enhanced && (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#e2e3e5", color: "#383d41", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ Enhanced Stats
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {analysis && analysis.text && (
+                  <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
+                    {analysis.text}
+                  </div>
                 )}
 
                 {analysis && analysis.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
@@ -1344,7 +1095,11 @@ For fantasy/DFS only - NOT for prop betting.
                 )}
 
                 {analysis && analysis.loading && (
-                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating analysis with enhanced JSON parsing...</div>
+                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                    <div style={{ marginBottom: "10px" }}>Step 1: Extracting data from JSON...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 2: Compiling all sources...</div>
+                    <div>Step 3: Generating detailed analysis...</div>
+                  </div>
                 )}
               </div>
             </div>
@@ -1354,7 +1109,7 @@ For fantasy/DFS only - NOT for prop betting.
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.4: Fixed JSON Parsing • Fixed Injury Detection • Backend proxied API-Sports • Call 1-800-GAMBLER
+            v3.0: 3-Step Architecture | JavaScript Extracts → Compiles → AI Analyzes | No nfelo | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
