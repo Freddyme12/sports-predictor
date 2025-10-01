@@ -41,7 +41,7 @@ export default async function handler(req, res) {
     
     if (team) {
       // Need to lookup team ID first
-      const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?name=${encodeURIComponent(team)}&league=${sportConfig.league}`;
+      const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?search=${encodeURIComponent(team)}&league=${sportConfig.league}`;
       const teamResponse = await fetch(teamSearchUrl, {
         headers: { 'x-apisports-key': apiKey },
         signal: AbortSignal.timeout(8000)

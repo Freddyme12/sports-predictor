@@ -34,7 +34,7 @@ export default async function handler(req, res) {
   
   try {
     // Step 1: Get team ID
-    const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?name=${encodeURIComponent(team)}&league=${sportConfig.league}`;
+    const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?search=${encodeURIComponent(team)}&league=${sportConfig.league}`;
     
     const teamResponse = await fetch(teamSearchUrl, {
       headers: { 'x-apisports-key': apiKey },
