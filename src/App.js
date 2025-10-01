@@ -410,6 +410,32 @@ Always show your math. Educational purposes only - not investment advice.`;
     };
   };
 
+  // VALIDATE DATA RANGES - RESTORED
+  const validateDataRanges = (compiledData) => {
+    const warnings = [];
+    
+    if (compiledData.sport === 'NFL') {
+      const homeEPA = compiledData.team_statistics.home.epa;
+      const awayEPA = compiledData.team_statistics.away.epa;
+      
+      if (Math.abs(homeEPA) < 0.01 && Math.abs(awayEPA) < 0.01) {
+        warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
+      }
+      if (Math.abs(homeEPA) > 0.5 || Math.abs(awayEPA) > 0.5) {
+        warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
+      }
+    }
+    
+    if (compiledData.sport === 'CFB') {
+      const spPlusDiff = Math.abs(compiledData.team_statistics.home.sp_plus - compiledData.team_statistics.away.sp_plus);
+      if (spPlusDiff > 50) {
+        warnings.push("WARNING: SP+ differential extremely large (" + spPlusDiff.toFixed(1) + "). This suggests a major mismatch.");
+      }
+    }
+    
+    return warnings;
+  };
+
   // STEP 2: COMPILE ALL DATA INTO CLEAN FORMAT
   const compileAllGameData = (game, gameData, espnData, marketData, fantasyData) => {
     const isCFB = gameData.team_data !== undefined;
@@ -784,6 +810,9 @@ Always show your math. Educational purposes only - not investment advice.`;
       // STEP 2: Compile all data
       const compiledData = compileAllGameData(game, gameData, espnData, marketData, fantasyData);
       
+      // Validate data ranges - RESTORED
+      const dataWarnings = validateDataRanges(compiledData);
+      
       // Debug log
       console.log('=== COMPILED DATA ===');
       console.log(compiledData);
@@ -793,6 +822,14 @@ Always show your math. Educational purposes only - not investment advice.`;
       prompt += "All data has been pre-extracted and verified by JavaScript. Use these values directly.\n\n";
       prompt += JSON.stringify(compiledData, null, 2) + "\n\n";
       
+      if (dataWarnings.length > 0) {
+        prompt += "=== DATA QUALITY WARNINGS ===\n";
+        dataWarnings.forEach(warning => {
+          prompt += warning + "\n";
+        });
+        prompt += "\n";
+      }
+      
       prompt += "=== ANALYSIS INSTRUCTIONS ===\n";
       prompt += "1. Review the compiled data above\n";
       prompt += "2. Apply the appropriate formula (CFB or NFL) using the provided statistics\n";
@@ -801,8 +838,11 @@ Always show your math. Educational purposes only - not investment advice.`;
       prompt += "5. If market_odds available, create ensemble prediction (Model 67%, Market 33%)\n";
       prompt += "6. If market_odds NOT available, use Model 100% and reduce confidence by 1 tier\n";
       prompt += "7. Provide final prediction with confidence level (1-5 stars)\n";
-      prompt += "8. List key factors driving the prediction\n\n";
-      prompt += "CRITICAL: Show your math. This is educational analysis only.";
+      prompt += "8. List key factors driving the prediction\n";
+      if (dataWarnings.length > 0) {
+        prompt += "9. Address the data quality warnings in your analysis\n";
+      }
+      prompt += "\nCRITICAL: Show your math. This is educational analysis only.";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -832,7 +872,8 @@ Always show your math. Educational purposes only - not investment advice.`;
           loading: false, 
           text: analysis,
           compiledData: compiledData,
-          fantasyData: fantasyData
+          fantasyData: fantasyData,
+          dataWarnings: dataWarnings
         }
       })));
     } catch (err) {
@@ -874,7 +915,7 @@ Always show your math. Educational purposes only - not investment advice.`;
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.0</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          3-Step Architecture: Extract → Compile → Analyze | No nfelo | Pure Data-Driven Analysis
+          3-Step Architecture: Extract → Compile → Analyze | Data Validation | Pure Data-Driven Analysis
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1025,6 +1066,19 @@ Always show your math. Educational purposes only - not investment advice.`;
                   </div>
                 )}
                 
+                {analysis && analysis.dataWarnings && analysis.dataWarnings.length > 0 && (
+                  <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
+                      Data Quality Warnings:
+                    </div>
+                    {analysis.dataWarnings.map((warning, idx) => (
+                      <div key={idx} style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
+                        • {warning}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
                 {analysis && analysis.text && (
                   <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                     {analysis.text}
@@ -1109,7 +1163,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.0: 3-Step Architecture | JavaScript Extracts → Compiles → AI Analyzes | No nfelo | Call 1-800-GAMBLER
+            v3.0: 3-Step Architecture | JavaScript Extracts → Compiles → AI Analyzes | Data Validation | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
