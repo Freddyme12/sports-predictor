@@ -19,7 +19,9 @@ export default function App() {
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
   
-  const BACKEND_URL = "https://sports-predictor.vercel.app";
+  // FIXED: Use empty string for same-origin requests (frontend and backend in same Vercel project)
+  // If your API is in a different project, replace with: "https://your-backend-project.vercel.app"
+  const BACKEND_URL = "";
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
@@ -333,6 +335,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         throw new Error("Enhanced data only available for NFL/CFB");
       }
       
+      console.log('Fetching backend data from:', endpoint + params);
       const response = await fetch(endpoint + params);
       
       if (!response.ok) {
@@ -345,6 +348,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         throw new Error(data.message || data.error);
       }
       
+      console.log('Backend data loaded successfully:', data);
       setEnhancedData(data);
       setBackendDataAvailable(data.games && data.games.length > 0);
       return data;
@@ -1214,7 +1218,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
             <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px", border: "1px solid #c3e6cb" }}>
               <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724", marginBottom: "4px" }}>
-                nfelo NFL Model Active
+                ✓ nfelo NFL Model Active
               </div>
               <div style={{ fontSize: "12px", color: "#155724" }}>
                 Elo ratings, predictions, and expected value analysis enabled
