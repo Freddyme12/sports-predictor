@@ -19,7 +19,7 @@ export default function App() {
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
   
-  const BACKEND_URL = "https://your-backend-url.vercel.app"; // CHANGE THIS TO YOUR ACTUAL BACKEND URL
+  const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app"; // CHANGE THIS TO YOUR ACTUAL BACKEND URL
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
