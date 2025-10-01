@@ -12,9 +12,12 @@ export default function App() {
   const [datasetLoaded, setDatasetLoaded] = useState(false);
   const [espnDataCache, setEspnDataCache] = useState({});
   
-  const [dataSource, setDataSource] = useState("manual");
+  const [useBackendData, setUseBackendData] = useState(true);
+  const [useManualData, setUseManualData] = useState(false);
   const [backendDataAvailable, setBackendDataAvailable] = useState(false);
   const [enhancedData, setEnhancedData] = useState(null);
+  const [nfeloData, setNfeloData] = useState(null);
+  const [nfeloAvailable, setNfeloAvailable] = useState(false);
   
   const BACKEND_URL = "https://sports-predictor.vercel.app";
 
@@ -28,6 +31,33 @@ First, determine which sport you're analyzing based on the dataset:
 - If data contains SP+, success_rate, explosiveness, havoc_rate → College Football (CFB)
 - If data contains EPA, offensive_line_unit, player_statistics → NFL
 - Adapt your methodology accordingly
+
+## NFELO INTEGRATION (NFL ONLY)
+
+When nfelo predictions are available, incorporate them into your analysis:
+
+**nfelo Model Overview:**
+- Elo-based rating system specifically tuned for NFL
+- Accounts for QB adjustments, rest days, weather, home field
+- Provides win probabilities and expected value vs market lines
+- Open-source model validated against historical performance
+
+**How to Use nfelo Data:**
+1. **Power Ratings Context**: nfelo Elo scores indicate true team strength (1500 = average)
+2. **Momentum Capture**: Recent form reflected in Elo changes
+3. **Market Comparison**: Compare nfelo spread vs your model vs market
+4. **Expected Value**: nfelo flags +EV opportunities when model disagrees with market
+5. **Ensemble Weighting**: Weight predictions as: Your Model (45%), nfelo (30%), Market (25%)
+
+**When nfelo Differs Significantly:**
+- If nfelo spread differs by 3+ points from your model, investigate why
+- Common reasons: QB injury impact, recent performance trends, scheduling factors
+- Use nfelo's QB-specific adjustments to validate your injury calculations
+
+**Confidence Calibration with nfelo:**
+- Model consensus (all agree): Increase confidence by 1 star
+- Model disagreement (3+ point spread): Reduce confidence by 1 star
+- nfelo shows +EV: Mention as supporting factor
 
 ## COLLEGE FOOTBALL (CFB) PROJECTION METHODOLOGY
 
@@ -283,6 +313,8 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   ];
 
   const fetchEnhancedData = async () => {
+    if (!useBackendData) return null;
+    
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth();
     const currentWeek = currentMonth >= 8 ? Math.ceil((new Date() - new Date(currentYear, 8, 1)) / (7 * 24 * 60 * 60 * 1000)) : 1;
@@ -319,7 +351,51 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     } catch (err) {
       console.error("Enhanced data fetch failed:", err);
       setBackendDataAvailable(false);
-      setError(`Backend data unavailable: ${err.message}. Using manual dataset or odds only.`);
+      setError(`Backend data unavailable: ${err.message}. Using other sources.`);
+      return null;
+    }
+  };
+
+  const fetchNfeloData = async () => {
+    if (selectedSport !== "americanfootball_nfl") {
+      setNfeloAvailable(false);
+      return null;
+    }
+    
+    const currentYear = new Date().getFullYear();
+    const currentMonth = new Date().getMonth();
+    const currentWeek = currentMonth >= 8 ? Math.ceil((new Date() - new Date(currentYear, 8, 1)) / (7 * 24 * 60 * 60 * 1000)) : 1;
+    
+    try {
+      const sources = [
+        `https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_${currentYear}_week${currentWeek}.json`,
+        `https://www.nfeloapp.com/api/predictions?week=${currentWeek}&season=${currentYear}`,
+        `${BACKEND_URL}/api/nfelo-proxy?week=${currentWeek}&season=${currentYear}`
+      ];
+      
+      for (const source of sources) {
+        try {
+          const response = await fetch(source);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && (data.games || data.predictions)) {
+              setNfeloData(data);
+              setNfeloAvailable(true);
+              console.log('nfelo data loaded successfully');
+              return data;
+            }
+          }
+        } catch (err) {
+          continue;
+        }
+      }
+      
+      console.log('nfelo data not available from any source');
+      setNfeloAvailable(false);
+      return null;
+    } catch (err) {
+      console.error("nfelo data fetch failed:", err);
+      setNfeloAvailable(false);
       return null;
     }
   };
@@ -389,16 +465,14 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     };
   };
 
-  // CORRECTED: More accurate injury quantification based on 2025 oddsmaker research
   const quantifyInjuryImpact = (espnData, isCFB = false) => {
     if (!espnData?.home || !espnData?.away) return { home: 0, away: 0, total: 0 };
 
-    // NFL Impact scores (conservative, reality-based)
     const nflImpactScores = {
-      'qb': 5.0, 'quarterback': 5.0, // Average QB impact, adjusted by backup quality
-      'rb': 1.0, 'running back': 1.0, // Max 1-1.5 for elite
-      'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0, // Max 1-1.5 for elite
-      'te': 0.6, 'tight end': 0.6, // Max 0.8 for elite
+      'qb': 5.0, 'quarterback': 5.0,
+      'rb': 1.0, 'running back': 1.0,
+      'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0,
+      'te': 0.6, 'tight end': 0.6,
       'ol': 0.5, 'offensive line': 0.5, 'guard': 0.5, 'tackle': 0.5, 'center': 0.5,
       'de': 0.4, 'defensive end': 0.4, 'edge': 0.4,
       'dt': 0.3, 'defensive tackle': 0.3,
@@ -407,7 +481,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       's': 0.4, 'safety': 0.4
     };
 
-    // CFB scores (higher due to less depth)
     const cfbImpactScores = {
       'qb': 7.0, 'quarterback': 7.0,
       'rb': 1.5, 'running back': 1.5,
@@ -434,7 +507,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                       headline.includes('doubtful') ? 0.8 : 
                       headline.includes('questionable') ? 0.4 : 0.5;
 
-        // Find position impact
         for (const [pos, value] of Object.entries(impactScores)) {
           if (headline.includes(pos)) {
             impact = Math.max(impact, value);
@@ -446,10 +518,9 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         totalImpact += (impact * severity);
       });
 
-      // Cluster injury multiplier (multiple injuries at same position)
       Object.values(positionCount).forEach(count => {
         if (count >= 2) {
-          totalImpact *= (1 + (count - 1) * 0.3); // 30% compound per additional injury
+          totalImpact *= (1 + (count - 1) * 0.3);
         }
       });
 
@@ -464,7 +535,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       away: awayImpact,
       total: homeImpact + awayImpact,
       differential: homeImpact - awayImpact,
-      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 4), 2) // More conservative
+      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 4), 2)
     };
   };
 
@@ -472,7 +543,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     if (!advancedFeatures) return null;
 
     if (advancedFeatures.sport === 'CFB') {
-      // CFB calculation with corrected weights
       let homeAdvantage = 3.5;
       homeAdvantage += advancedFeatures.spPlusDiff * 0.18 * 0.45;
       homeAdvantage += advancedFeatures.offSuccessRateDiff * 22 * 0.22;
@@ -480,7 +550,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       homeAdvantage += advancedFeatures.explosivenessDiff * 2.5 * 0.10;
       homeAdvantage += advancedFeatures.havocRateDiff * 12 * 0.05;
       
-      // CFB injury impact (higher due to less depth)
       homeAdvantage -= injuryImpact.home;
       homeAdvantage += injuryImpact.away;
 
@@ -500,13 +569,11 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       };
     }
 
-    // NFL calculation with corrected weights and injury handling
     let homeAdvantage = 2.5;
     homeAdvantage += (advancedFeatures.passBlockAdvantage * 0.012);
     homeAdvantage += (advancedFeatures.runBlockAdvantage * 0.008);
     homeAdvantage += advancedFeatures.fieldPositionPointValue;
     
-    // Apply injury differential (already calculated correctly)
     homeAdvantage -= injuryImpact.home;
     homeAdvantage += injuryImpact.away;
     
@@ -574,12 +641,82 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     };
   };
 
+  const findNfeloPrediction = (game) => {
+    if (!nfeloData || !nfeloAvailable) return null;
+    
+    const normalizeTeamName = (name) => {
+      return name.toLowerCase().replace(/[^a-z]/g, '');
+    };
+    
+    const gameHome = normalizeTeamName(game.home_team);
+    const gameAway = normalizeTeamName(game.away_team);
+    
+    const predictions = nfeloData.games || nfeloData.predictions || [];
+    
+    return predictions.find(pred => {
+      const predHome = normalizeTeamName(pred.home_team || pred.home || '');
+      const predAway = normalizeTeamName(pred.away_team || pred.away || '');
+      
+      return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
+             (gameAway.includes(predAway) || predAway.includes(gameAway));
+    });
+  };
+
+  const calculateEnsemblePrediction = (statProjection, nfeloPrediction, marketSpread) => {
+    if (!statProjection) return null;
+    
+    let ensembleSpread = statProjection.projectedSpread;
+    let weights = { model: 0.60, nfelo: 0.15, market: 0.25 };
+    
+    if (nfeloPrediction && nfeloPrediction.predicted_spread !== undefined) {
+      ensembleSpread = (
+        (statProjection.projectedSpread * 0.45) +
+        (nfeloPrediction.predicted_spread * 0.30) +
+        (marketSpread * 0.25)
+      );
+      weights = { model: 0.45, nfelo: 0.30, market: 0.25 };
+    } else if (marketSpread !== undefined) {
+      ensembleSpread = (
+        (statProjection.projectedSpread * 0.65) +
+        (marketSpread * 0.35)
+      );
+      weights = { model: 0.65, nfelo: 0, market: 0.35 };
+    }
+    
+    let consensusBonus = 0;
+    if (nfeloPrediction && marketSpread !== undefined) {
+      const spreads = [
+        statProjection.projectedSpread,
+        nfeloPrediction.predicted_spread,
+        marketSpread
+      ].filter(s => s !== undefined);
+      
+      const maxDiff = Math.max(...spreads) - Math.min(...spreads);
+      
+      if (maxDiff < 2) {
+        consensusBonus = 1;
+      } else if (maxDiff > 4) {
+        consensusBonus = -1;
+      }
+    }
+    
+    return {
+      ensembleSpread: Math.round(ensembleSpread * 2) / 2,
+      baseSpread: statProjection.projectedSpread,
+      nfeloSpread: nfeloPrediction?.predicted_spread,
+      marketSpread,
+      weights,
+      consensusConfidence: Math.max(1, Math.min(5, (statProjection.confidence || 3) + consensusBonus)),
+      hasConsensus: consensusBonus > 0,
+      hasDisagreement: consensusBonus < 0
+    };
+  };
+
   const parseDataset = () => {
     try {
       const parsed = JSON.parse(customDataset);
       setParsedDataset(parsed);
       setDatasetLoaded(true);
-      setDataSource("manual");
       return parsed;
     } catch (err) {
       setDatasetLoaded(false);
@@ -678,8 +815,12 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       let gamesWithIds = [];
       let backendData = null;
 
-      if (dataSource === "backend") {
+      if (useBackendData) {
         backendData = await fetchEnhancedData();
+      }
+      
+      if (selectedSport === "americanfootball_nfl") {
+        await fetchNfeloData();
       }
 
       if (apiKey.trim()) {
@@ -714,7 +855,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             
             return matchingBackendGame ? {
               ...oddsGame,
-              enhancedData: matchingBackendGame
+              backendEnhancedData: matchingBackendGame
             } : oddsGame;
           });
         } else {
@@ -726,14 +867,13 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             home_team: game.home_team,
             away_team: game.away_team,
             bookmakers: [],
-            enhancedData: game
+            backendEnhancedData: game
           }));
         }
       }
 
-      if (gamesWithIds.length === 0 && parsedDataset?.games) {
-        setError("Using manual dataset only.");
-        gamesWithIds = parsedDataset.games.map((game, index) => {
+      if (useManualData && parsedDataset?.games) {
+        const manualGames = parsedDataset.games.map((game, index) => {
           let homeTeam, awayTeam, gameTime;
           
           if (game.team_data) {
@@ -754,13 +894,34 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             home_team: homeTeam,
             away_team: awayTeam,
             bookmakers: [],
-            manualData: game
+            manualEnhancedData: game
           };
         });
+
+        if (gamesWithIds.length > 0) {
+          gamesWithIds = gamesWithIds.map(oddsGame => {
+            const matchingManualGame = manualGames.find(mg =>
+              (mg.home_team.toLowerCase().includes(oddsGame.home_team.toLowerCase()) ||
+               oddsGame.home_team.toLowerCase().includes(mg.home_team.toLowerCase())) &&
+              (mg.away_team.toLowerCase().includes(oddsGame.away_team.toLowerCase()) ||
+               oddsGame.away_team.toLowerCase().includes(mg.away_team.toLowerCase()))
+            );
+            
+            if (matchingManualGame) {
+              return {
+                ...oddsGame,
+                manualEnhancedData: matchingManualGame.manualEnhancedData
+              };
+            }
+            return oddsGame;
+          });
+        } else {
+          gamesWithIds = [...gamesWithIds, ...manualGames];
+        }
       }
 
       if (gamesWithIds.length === 0) {
-        setError("No games found. Please provide either an Odds API key, enable backend data, or load a dataset.");
+        setError("No games found. Please enable at least one data source (Backend API, Manual Dataset, or Odds API).");
         return;
       }
 
@@ -792,36 +953,46 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   };
 
   const findMatchingDatasetGame = (oddsGame) => {
-    if (oddsGame.enhancedData) {
-      return oddsGame.enhancedData;
+    const sources = [];
+    
+    if (oddsGame.backendEnhancedData) {
+      sources.push(oddsGame.backendEnhancedData);
     }
     
-    if (oddsGame.manualData) {
-      return oddsGame.manualData;
+    if (oddsGame.manualEnhancedData) {
+      sources.push(oddsGame.manualEnhancedData);
     }
     
-    if (!parsedDataset?.games) return null;
+    if (sources.length === 0) return null;
+    if (sources.length === 1) return sources[0];
     
-    return parsedDataset.games.find((dataGame) => {
-      const oddsHome = oddsGame.home_team.toLowerCase().replace(/[^a-z]/g, '');
-      const oddsAway = oddsGame.away_team.toLowerCase().replace(/[^a-z]/g, '');
+    const merged = { ...sources[0] };
+    
+    for (let i = 1; i < sources.length; i++) {
+      const source = sources[i];
       
-      if (dataGame.teams) {
-        const dataHome = (dataGame.teams.home || "").toLowerCase().replace(/[^a-z]/g, '');
-        const dataAway = (dataGame.teams.away || "").toLowerCase().replace(/[^a-z]/g, '');
-        return (oddsHome.includes(dataHome) || dataHome.includes(oddsHome)) &&
-               (oddsAway.includes(dataAway) || dataAway.includes(oddsAway));
+      if (source.team_data) {
+        merged.team_data = merged.team_data || {};
+        merged.team_data.home = { ...merged.team_data.home, ...source.team_data.home };
+        merged.team_data.away = { ...merged.team_data.away, ...source.team_data.away };
       }
       
-      if (dataGame.home_team && dataGame.away_team) {
-        const dataHome = dataGame.home_team.toLowerCase().replace(/[^a-z]/g, '');
-        const dataAway = dataGame.away_team.toLowerCase().replace(/[^a-z]/g, '');
-        return (oddsHome.includes(dataHome) || dataHome.includes(oddsHome)) &&
-               (oddsAway.includes(dataAway) || dataAway.includes(oddsAway));
+      if (source.player_statistics) {
+        merged.player_statistics = { ...merged.player_statistics, ...source.player_statistics };
       }
       
-      return false;
-    });
+      if (source.epa_stats) {
+        merged.epa_stats = { ...merged.epa_stats, ...source.epa_stats };
+      }
+      
+      Object.keys(source).forEach(key => {
+        if (merged[key] === undefined) {
+          merged[key] = source[key];
+        }
+      });
+    }
+    
+    return merged;
   };
 
   const analyzeGame = async (game) => {
@@ -835,13 +1006,17 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : { home: 0, away: 0, total: 0 };
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(datasetGame, advancedFeatures, injuryImpact) : null;
       const marketAnalysis = statPrediction ? findMarketValue(game, statPrediction) : null;
+      const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
+      const ensemblePrediction = statPrediction && !isCFB ? 
+        calculateEnsemblePrediction(statPrediction, nfeloPrediction, marketAnalysis?.marketSpread) : null;
 
       let prompt = `Provide comprehensive analysis for ${game.away_team} @ ${game.home_team}\n\n`;
       
-      if (game.enhancedData) {
-        prompt += `**DATA SOURCE: Backend Enhanced Data**\n\n`;
-      } else if (game.manualData) {
-        prompt += `**DATA SOURCE: Manual Dataset Upload**\n\n`;
+      const dataSources = [];
+      if (game.backendEnhancedData) dataSources.push('Backend API');
+      if (game.manualEnhancedData) dataSources.push('Manual Dataset');
+      if (dataSources.length > 0) {
+        prompt += `**DATA SOURCES: ${dataSources.join(' + ')}**\n\n`;
       }
       
       if (isCFB) {
@@ -858,6 +1033,40 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         if (marketAnalysis.marketSpread) {
           prompt += `Market Spread: ${game.home_team} ${marketAnalysis.marketSpread}\n`;
           prompt += `Spread Edge: ${marketAnalysis.spreadDifferential.toFixed(1)} points\n`;
+        }
+        prompt += `\n`;
+      }
+      
+      if (nfeloPrediction) {
+        prompt += `**NFELO PREDICTIONS (NFL Elo Model):**\n`;
+        prompt += `Elo Ratings: ${game.home_team} ${nfeloPrediction.home_elo || nfeloPrediction.home_rating}, ${game.away_team} ${nfeloPrediction.away_elo || nfeloPrediction.away_rating}\n`;
+        prompt += `Elo Differential: ${Math.abs((nfeloPrediction.home_elo || nfeloPrediction.home_rating) - (nfeloPrediction.away_elo || nfeloPrediction.away_rating)).toFixed(0)} points\n`;
+        if (nfeloPrediction.predicted_spread !== undefined) {
+          prompt += `nfelo Spread: ${game.home_team} ${nfeloPrediction.predicted_spread > 0 ? '-' : '+'}${Math.abs(nfeloPrediction.predicted_spread)}\n`;
+        }
+        if (nfeloPrediction.home_win_prob !== undefined) {
+          prompt += `Win Probability: ${game.home_team} ${(nfeloPrediction.home_win_prob * 100).toFixed(1)}%, ${game.away_team} ${((1 - nfeloPrediction.home_win_prob) * 100).toFixed(1)}%\n`;
+        }
+        if (nfeloPrediction.expected_value !== undefined && nfeloPrediction.expected_value !== 0) {
+          prompt += `Expected Value: ${nfeloPrediction.expected_value > 0 ? '+' : ''}${nfeloPrediction.expected_value.toFixed(1)}% (${nfeloPrediction.expected_value > 0 ? 'POSITIVE EV' : 'NEGATIVE EV'})\n`;
+        }
+        if (nfeloPrediction.qb_adjustment) {
+          prompt += `QB Adjustment: ${nfeloPrediction.qb_adjustment.toFixed(1)} points\n`;
+        }
+        prompt += `\n`;
+      }
+
+      if (ensemblePrediction) {
+        prompt += `**ENSEMBLE MODEL (Multi-Model Consensus):**\n`;
+        prompt += `Weighted Ensemble Spread: ${game.home_team} ${ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}${Math.abs(ensemblePrediction.ensembleSpread)}\n`;
+        prompt += `Model Weights: Statistical ${(ensemblePrediction.weights.model * 100).toFixed(0)}%, nfelo ${(ensemblePrediction.weights.nfelo * 100).toFixed(0)}%, Market ${(ensemblePrediction.weights.market * 100).toFixed(0)}%\n`;
+        prompt += `Consensus Confidence: ${ensemblePrediction.consensusConfidence}/5 stars ${ensemblePrediction.hasConsensus ? '(STRONG CONSENSUS ✓)' : ensemblePrediction.hasDisagreement ? '(MODELS DISAGREE ⚠)' : ''}\n`;
+        if (ensemblePrediction.hasDisagreement) {
+          prompt += `\n**MODEL DISAGREEMENT ANALYSIS NEEDED:**\n`;
+          prompt += `Your Model: ${ensemblePrediction.baseSpread}\n`;
+          prompt += `nfelo Model: ${ensemblePrediction.nfeloSpread}\n`;
+          prompt += `Market: ${ensemblePrediction.marketSpread}\n`;
+          prompt += `Investigate why models differ by 3+ points. Consider: recent form, QB situation, matchup-specific factors.\n`;
         }
         prompt += `\n`;
       }
@@ -945,7 +1154,14 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
       setAnalyses(prev => ({
         ...prev,
-        [game.id]: { loading: false, text: analysis, marketAnalysis, statPrediction }
+        [game.id]: { 
+          loading: false, 
+          text: analysis, 
+          marketAnalysis, 
+          statPrediction,
+          nfeloPrediction,
+          ensemblePrediction
+        }
       }));
     } catch (err) {
       setAnalyses(prev => ({ ...prev, [game.id]: { loading: false, text: `Error: ${err.message}` } }));
@@ -988,47 +1204,63 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Analytics & Fantasy System</h1>
-        <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>Statistical projections with corrected 2025 injury methodology</p>
+        <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
+          Multi-source data integration with nfelo Elo & corrected 2025 injury methodology
+        </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>Configuration</h2>
           
+          {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
+            <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px", border: "1px solid #c3e6cb" }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724", marginBottom: "4px" }}>
+                nfelo NFL Model Active
+              </div>
+              <div style={{ fontSize: "12px", color: "#155724" }}>
+                Elo ratings, predictions, and expected value analysis enabled
+              </div>
+            </div>
+          )}
+          
           <div style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#f8f9fa", borderRadius: "6px" }}>
-            <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "10px" }}>Data Source</div>
-            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer" }}>
+            <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "10px" }}>Data Sources (Can use multiple simultaneously)</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
                 <input
-                  type="radio"
-                  value="backend"
-                  checked={dataSource === "backend"}
-                  onChange={(e) => setDataSource(e.target.value)}
+                  type="checkbox"
+                  checked={useBackendData}
+                  onChange={(e) => setUseBackendData(e.target.checked)}
                 />
-                <span style={{ fontSize: "14px" }}>Backend API (CFB - SP+ + Recruiting)</span>
+                <span style={{ fontSize: "14px" }}>Backend API (SP+, EPA, Recruiting Data)</span>
+                {backendDataAvailable && <span style={{ fontSize: "12px", color: "#10b981", fontWeight: "600" }}>✓ Loaded</span>}
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
                 <input
-                  type="radio"
-                  value="manual"
-                  checked={dataSource === "manual"}
-                  onChange={(e) => setDataSource(e.target.value)}
+                  type="checkbox"
+                  checked={useManualData}
+                  onChange={(e) => setUseManualData(e.target.checked)}
                 />
-                <span style={{ fontSize: "14px" }}>Manual JSON Upload</span>
+                <span style={{ fontSize: "14px" }}>Manual JSON Dataset</span>
+                {datasetLoaded && <span style={{ fontSize: "12px", color: "#10b981", fontWeight: "600" }}>✓ Loaded</span>}
               </label>
+            </div>
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "12px", color: "#856404" }}>
+              When both sources are enabled, data will be merged for comprehensive analysis
             </div>
           </div>
           
-          {dataSource === "manual" && (
+          {useManualData && (
             <div style={{ marginBottom: "15px" }}>
               <textarea
                 value={customDataset}
                 onChange={(e) => setCustomDataset(e.target.value)}
                 placeholder="Paste dataset JSON..."
-                style={{ width: "100%", minHeight: "100px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px" }}
+                style={{ width: "100%", minHeight: "100px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px", borderRadius: "4px", border: "1px solid #ddd" }}
               />
-              <button onClick={parseDataset} style={{ padding: "8px 16px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", marginRight: "10px" }}>
+              <button onClick={parseDataset} style={{ padding: "8px 16px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", marginRight: "10px", cursor: "pointer" }}>
                 Load Dataset
               </button>
-              {datasetLoaded && <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>✓ Loaded</span>}
+              {datasetLoaded && <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>✓ Dataset Loaded</span>}
             </div>
           )}
 
@@ -1045,7 +1277,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             </select>
           </div>
 
-          <button onClick={fetchGames} disabled={loading} style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
+          <button onClick={fetchGames} disabled={loading} style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: loading ? "not-allowed" : "pointer" }}>
             {loading ? "Loading..." : "Fetch Games"}
           </button>
         </div>
@@ -1059,6 +1291,11 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           const espnData = espnDataCache[game.id];
           const isCFB = advancedFeatures?.sport === 'CFB';
           const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
+          const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
+
+          const dataSources = [];
+          if (game.backendEnhancedData) dataSources.push('Backend');
+          if (game.manualEnhancedData) dataSources.push('Manual');
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -1071,6 +1308,18 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                     </div>
                     
                     <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {dataSources.length > 0 && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#e0e7ff",
+                          color: "#3730a3",
+                          fontWeight: "600"
+                        }}>
+                          📊 {dataSources.join(' + ')}
+                        </span>
+                      )}
                       {advancedFeatures && (
                         <span style={{ 
                           fontSize: "11px", 
@@ -1081,6 +1330,18 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           fontWeight: "600"
                         }}>
                           {advancedFeatures.sport === 'CFB' ? '✓ CFB SP+' : '✓ NFL EPA'}
+                        </span>
+                      )}
+                      {nfeloPrediction && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#e8f4f8",
+                          color: "#0066cc",
+                          fontWeight: "600"
+                        }}>
+                          ⭐ nfelo Model
                         </span>
                       )}
                       {injuryImpact && injuryImpact.total > 0 && (
@@ -1096,9 +1357,77 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           {injuryImpact.differential !== 0 && ` | ${Math.abs(injuryImpact.differential).toFixed(1)}pt edge`}
                         </span>
                       )}
+                      {analysis?.ensemblePrediction?.hasConsensus && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#d4edda",
+                          color: "#155724",
+                          fontWeight: "600"
+                        }}>
+                          ✓ Model Consensus
+                        </span>
+                      )}
+                      {analysis?.ensemblePrediction?.hasDisagreement && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#fff3cd",
+                          color: "#856404",
+                          fontWeight: "600"
+                        }}>
+                          ⚠ Models Disagree
+                        </span>
+                      )}
                     </div>
+                    
+                    {nfeloPrediction && (
+                      <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f8ff", borderRadius: "4px", border: "1px solid #b8daff" }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", color: "#004085" }}>
+                          nfelo Elo Ratings & Prediction
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#004085", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                          <span>
+                            {game.home_team}: {nfeloPrediction.home_elo || nfeloPrediction.home_rating}
+                          </span>
+                          <span>
+                            {game.away_team}: {nfeloPrediction.away_elo || nfeloPrediction.away_rating}
+                          </span>
+                          {nfeloPrediction.predicted_spread !== undefined && (
+                            <span style={{ fontWeight: "600" }}>
+                              Spread: {game.home_team} {nfeloPrediction.predicted_spread > 0 ? '-' : '+'}
+                              {Math.abs(nfeloPrediction.predicted_spread)}
+                            </span>
+                          )}
+                          {nfeloPrediction.home_win_prob !== undefined && (
+                            <span>
+                              Win Prob: {(nfeloPrediction.home_win_prob * 100).toFixed(0)}%/{((1-nfeloPrediction.home_win_prob) * 100).toFixed(0)}%
+                            </span>
+                          )}
+                          {nfeloPrediction.expected_value !== undefined && nfeloPrediction.expected_value > 0 && (
+                            <span style={{ color: "#10b981", fontWeight: "600" }}>
+                              +EV: {nfeloPrediction.expected_value.toFixed(1)}%
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {analysis?.ensemblePrediction && (
+                      <div style={{ marginTop: "8px", padding: "8px", backgroundColor: "#fff9e6", borderRadius: "4px", border: "1px solid #ffd700" }}>
+                        <div style={{ fontSize: "11px", fontWeight: "600", color: "#856404" }}>
+                          Ensemble: {game.home_team} {analysis.ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}
+                          {Math.abs(analysis.ensemblePrediction.ensembleSpread)} 
+                          <span style={{ marginLeft: "8px", fontWeight: "normal" }}>
+                            (Confidence: {analysis.ensemblePrediction.consensusConfidence}/5⭐)
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button onClick={() => analyzeGame(game)} disabled={analysis?.loading} style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600" }}>
+                  <button onClick={() => analyzeGame(game)} disabled={analysis?.loading} style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: analysis?.loading ? "not-allowed" : "pointer" }}>
                     {analysis?.loading ? "Analyzing..." : "Analyze"}
                   </button>
                 </div>
@@ -1113,7 +1442,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
-                    <div style={{ marginBottom: "10px" }}>Generating analysis with corrected injury methodology...</div>
+                    <div style={{ marginBottom: "10px" }}>Generating multi-source analysis with corrected injury methodology...</div>
                   </div>
                 )}
               </div>
@@ -1124,7 +1453,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            Updated with 2025 oddsmaker research. Call 1-800-GAMBLER for help.
+            Multi-source data integration (Backend API + Manual Datasets) with 2025 oddsmaker research + nfelo Elo model. Call 1-800-GAMBLER for help.
           </p>
         </div>
       </div>
