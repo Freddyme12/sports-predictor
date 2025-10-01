@@ -195,9 +195,13 @@ export default function App() {
       receivers: []
     };
 
+    const processedPlayers = new Set();
+
     if (playerStats.quarterbacks) {
       playerStats.quarterbacks.forEach(qb => {
         if (!qb.attempts || qb.attempts < 20) return;
+        if (processedPlayers.has(qb.player_name)) return;
+        processedPlayers.add(qb.player_name);
         
         const completionPct = qb.completions / qb.attempts;
         const yardsPerAttempt = qb.yards / qb.attempts;
@@ -219,6 +223,7 @@ export default function App() {
           projectedPoints: totalPoints.toFixed(1),
           passYards: projectedPassYards.toFixed(0),
           passTDs: projectedPassTDs.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
           confidence: confidence
         });
       });
@@ -227,6 +232,8 @@ export default function App() {
     if (playerStats.running_backs_top3) {
       playerStats.running_backs_top3.forEach(rb => {
         if (!rb.carries || rb.carries < 10) return;
+        if (processedPlayers.has(rb.player_name)) return;
+        processedPlayers.add(rb.player_name);
         
         const ypc = rb.rush_yards / rb.carries;
         const carriesPerGame = rb.carries / 4;
@@ -249,6 +256,7 @@ export default function App() {
           projectedPoints: totalPoints.toFixed(1),
           rushYards: projectedRushYards.toFixed(0),
           receptions: projectedReceptions.toFixed(1),
+          recYards: projectedRecYards.toFixed(0),
           confidence: confidence
         });
       });
@@ -257,6 +265,8 @@ export default function App() {
     if (playerStats.receivers_tes_top5) {
       playerStats.receivers_tes_top5.forEach(receiver => {
         if (!receiver.targets || receiver.targets < 8) return;
+        if (processedPlayers.has(receiver.player_name)) return;
+        processedPlayers.add(receiver.player_name);
         
         const targetsPerGame = receiver.targets / 4;
         const receptionRate = receiver.receptions / receiver.targets;
@@ -352,6 +362,29 @@ export default function App() {
       differential: homeImpact - awayImpact,
       confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 3.5), 2)
     };
+  };
+
+  const validateDataRanges = (gameData, advancedFeatures) => {
+    const warnings = [];
+    
+    if (advancedFeatures) {
+      if (advancedFeatures.sport === 'NFL') {
+        if (Math.abs(advancedFeatures.homeEPA) < 0.01 && Math.abs(advancedFeatures.awayEPA) < 0.01) {
+          warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
+        }
+        if (Math.abs(advancedFeatures.homeEPA) > 0.5 || Math.abs(advancedFeatures.awayEPA) > 0.5) {
+          warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
+        }
+      }
+      
+      if (advancedFeatures.sport === 'CFB') {
+        if (Math.abs(advancedFeatures.spPlusDiff) > 50) {
+          warnings.push("WARNING: SP+ differential extremely large. This suggests a major mismatch.");
+        }
+      }
+    }
+    
+    return warnings;
   };
 
   const calculateAdvancedFeatures = (gameData) => {
@@ -596,12 +629,13 @@ export default function App() {
       const isCFB = advancedFeatures && advancedFeatures.sport === 'CFB';
       const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
       
-      // Get ESPN injury data
       const espnData = espnDataCache[game.id];
       const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
       
-      // Get market odds
+      const dataWarnings = validateDataRanges(gameData, advancedFeatures);
+      
       let marketData = null;
+      let hasMarketData = false;
       if (game.bookmakers && game.bookmakers.length > 0) {
         const book = game.bookmakers[0];
         marketData = {
@@ -609,6 +643,7 @@ export default function App() {
           total: book.markets.find(m => m.key === 'totals'),
           moneyline: book.markets.find(m => m.key === 'h2h')
         };
+        hasMarketData = true;
       }
       
       let fantasyData = null;
@@ -624,51 +659,109 @@ export default function App() {
         }
       }
 
-      let prompt = "Analyze: " + game.away_team + " @ " + game.home_team + "\n\n";
-      prompt += "SPORT: " + (isCFB ? 'COLLEGE FOOTBALL' : 'NFL') + "\n\n";
+      const dataSourceStatus = {
+        dataset: true,
+        marketOdds: hasMarketData,
+        nfeloModel: !!nfeloPrediction,
+        injuries: !!(espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
+        enhancedStats: !!game.hasBackendData
+      };
+
+      let prompt = "=== DATA SOURCE STATUS ===\n";
+      prompt += "Dataset: AVAILABLE\n";
+      prompt += "Market Odds: " + (hasMarketData ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
+      prompt += "nfelo Model: " + (nfeloPrediction ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
+      prompt += "Injury Data: " + (dataSourceStatus.injuries ? "AVAILABLE" : "NOT AVAILABLE") + "\n";
+      prompt += "Enhanced Stats: " + (game.hasBackendData ? "AVAILABLE" : "NOT AVAILABLE") + "\n\n";
+
+      if (dataWarnings.length > 0) {
+        prompt += "=== DATA QUALITY WARNINGS ===\n";
+        dataWarnings.forEach(warning => {
+          prompt += warning + "\n";
+        });
+        prompt += "\n";
+      }
+
+      prompt += "=== ENSEMBLE MODELING STATUS ===\n";
+      const availableComponents = [];
+      if (true) availableComponents.push("Model (50%)");
+      if (nfeloPrediction) availableComponents.push("nfelo (25%)");
+      if (hasMarketData) availableComponents.push("Market (25%)");
       
-      // Include dataset
-      prompt += "DATASET:\n" + JSON.stringify(gameData, null, 2) + "\n\n";
+      prompt += "Active Components: " + availableComponents.join(", ") + "\n";
       
-      // Include advanced features
+      if (!nfeloPrediction && !hasMarketData) {
+        prompt += "WARNING: Ensemble modeling degraded. Using MODEL ONLY (100% weight).\n";
+        prompt += "Confidence should be reduced by 1 tier due to lack of validation sources.\n\n";
+      } else if (!nfeloPrediction || !hasMarketData) {
+        const missingSource = !nfeloPrediction ? "nfelo" : "Market";
+        prompt += "NOTICE: " + missingSource + " unavailable. Redistributing weight to available sources.\n";
+        if (nfeloPrediction && !hasMarketData) {
+          prompt += "Adjusted weights: Model 67%, nfelo 33%\n\n";
+        } else if (!nfeloPrediction && hasMarketData) {
+          prompt += "Adjusted weights: Model 67%, Market 33%\n\n";
+        }
+      } else {
+        prompt += "Full ensemble available.\n\n";
+      }
+
+      prompt += "=== GAME ANALYSIS ===\n";
+      prompt += "Matchup: " + game.away_team + " @ " + game.home_team + "\n";
+      prompt += "Sport: " + (isCFB ? 'COLLEGE FOOTBALL' : 'NFL') + "\n\n";
+      
+      prompt += "=== PRIMARY DATASET ===\n";
+      prompt += JSON.stringify(gameData, null, 2) + "\n\n";
+      
       if (advancedFeatures) {
-        prompt += "CALCULATED FEATURES:\n" + JSON.stringify(advancedFeatures, null, 2) + "\n\n";
+        prompt += "=== CALCULATED FEATURES (from dataset) ===\n";
+        prompt += JSON.stringify(advancedFeatures, null, 2) + "\n\n";
       }
       
-      // Include market odds
       if (marketData) {
-        prompt += "MARKET ODDS:\n" + JSON.stringify(marketData, null, 2) + "\n\n";
+        prompt += "=== MARKET ODDS (for ensemble) ===\n";
+        prompt += JSON.stringify(marketData, null, 2) + "\n\n";
       }
       
-      // Include nfelo prediction
       if (nfeloPrediction) {
-        prompt += "NFELO PREDICTION:\n" + JSON.stringify(nfeloPrediction, null, 2) + "\n\n";
+        prompt += "=== NFELO PREDICTION (for ensemble) ===\n";
+        prompt += JSON.stringify(nfeloPrediction, null, 2) + "\n\n";
       }
       
-      // Include injury data
       if (injuryImpact) {
-        prompt += "INJURY IMPACT:\n";
+        prompt += "=== INJURY IMPACT ANALYSIS ===\n";
         prompt += "Home Team Impact: " + injuryImpact.home.toFixed(1) + " points\n";
         prompt += "Away Team Impact: " + injuryImpact.away.toFixed(1) + " points\n";
-        prompt += "Net Differential: " + injuryImpact.differential.toFixed(1) + " (favoring " + (injuryImpact.differential > 0 ? "Away" : "Home") + ")\n";
+        prompt += "Net Differential: " + injuryImpact.differential.toFixed(1) + " points (favoring " + (injuryImpact.differential > 0 ? "Away" : "Home") + ")\n";
         prompt += "Confidence Reduction: -" + injuryImpact.confidenceReduction + " tiers\n\n";
       }
       
-      if (espnData) {
-        prompt += "INJURY REPORTS:\n";
-        prompt += "Home (" + game.home_team + "): " + (espnData.home.injuries.length) + " injuries\n";
+      if (espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)) {
+        prompt += "=== DETAILED INJURY REPORTS ===\n";
+        prompt += "Home (" + game.home_team + "): " + espnData.home.injuries.length + " injuries\n";
         if (espnData.home.injuries.length > 0) {
-          prompt += espnData.home.injuries.map(inj => "  - " + inj.headline).join("\n") + "\n";
+          espnData.home.injuries.forEach(inj => {
+            prompt += "  - " + inj.headline + "\n";
+          });
         }
-        prompt += "Away (" + game.away_team + "): " + (espnData.away.injuries.length) + " injuries\n";
+        prompt += "\nAway (" + game.away_team + "): " + espnData.away.injuries.length + " injuries\n";
         if (espnData.away.injuries.length > 0) {
-          prompt += espnData.away.injuries.map(inj => "  - " + inj.headline).join("\n") + "\n";
+          espnData.away.injuries.forEach(inj => {
+            prompt += "  - " + inj.headline + "\n";
+          });
         }
         prompt += "\n";
       }
       
-      prompt += "Use the ensemble method: Model 50%, nfelo 25% (if available), Market 25% (if available).\n";
-      prompt += "Provide comprehensive analysis with spread prediction, total prediction, confidence level, and key factors.";
+      prompt += "=== ANALYSIS INSTRUCTIONS ===\n";
+      prompt += "1. Start with a clear API STATUS SUMMARY showing which data sources were used\n";
+      prompt += "2. Calculate the model-based prediction using the appropriate formula\n";
+      prompt += "3. If ensemble components available, blend predictions using the weights shown above\n";
+      prompt += "4. Clearly state if ensemble modeling is degraded and adjust confidence accordingly\n";
+      prompt += "5. Show all calculation steps transparently\n";
+      prompt += "6. Provide comprehensive analysis with spread prediction, total prediction, confidence level, and key factors\n";
+      prompt += "7. Note any data quality warnings in your analysis\n\n";
+      
+      prompt += "CRITICAL: Always attribute predictions to their source (Model/Market/nfelo) and explain ensemble weighting used.";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -698,7 +791,9 @@ export default function App() {
           loading: false, 
           text: analysis,
           fantasyData: fantasyData,
-          nfeloPrediction: nfeloPrediction
+          nfeloPrediction: nfeloPrediction,
+          dataSourceStatus: dataSourceStatus,
+          dataWarnings: dataWarnings
         }
       })));
     } catch (err) {
@@ -738,9 +833,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.0</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.1</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Fixed Formulas • Ensemble Modeling • Fantasy Projections
+          Fixed Formulas • Ensemble Modeling • Fantasy Projections • API Validation
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -836,31 +931,65 @@ export default function App() {
               <div style={{ padding: "15px" }}>
                 {analysis && analysis.text && (
                   <>
-                    <div style={{ marginBottom: "10px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
-                        ✓ Dataset
-                      </span>
-                      {game.bookmakers && game.bookmakers.length > 0 && (
-                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
-                          ✓ Market Odds
-                        </span>
-                      )}
-                      {analysis.nfeloPrediction && (
-                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "4px", fontWeight: "600" }}>
-                          ✓ nfelo Model
-                        </span>
-                      )}
-                      {espnDataCache[game.id] && (espnDataCache[game.id].home.injuries.length > 0 || espnDataCache[game.id].away.injuries.length > 0) && (
-                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                          ⚠ Injuries Detected
-                        </span>
-                      )}
-                      {game.hasBackendData && (
-                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#e2e3e5", color: "#383d41", borderRadius: "4px", fontWeight: "600" }}>
-                          ✓ Enhanced Stats
-                        </span>
-                      )}
-                    </div>
+                    {analysis.dataSourceStatus && (
+                      <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "6px", border: "1px solid #dee2e6" }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#495057" }}>
+                          API Data Sources Status:
+                        </div>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
+                            ✓ Dataset
+                          </span>
+                          {analysis.dataSourceStatus.marketOdds ? (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
+                              ✓ Market Odds
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
+                              ✗ Market Odds
+                            </span>
+                          )}
+                          {analysis.dataSourceStatus.nfeloModel ? (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "4px", fontWeight: "600" }}>
+                              ✓ nfelo Model
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
+                              ✗ nfelo Model
+                            </span>
+                          )}
+                          {analysis.dataSourceStatus.injuries && (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
+                              ⚠ Injuries Detected
+                            </span>
+                          )}
+                          {analysis.dataSourceStatus.enhancedStats && (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#e2e3e5", color: "#383d41", borderRadius: "4px", fontWeight: "600" }}>
+                              ✓ Enhanced Stats
+                            </span>
+                          )}
+                        </div>
+                        {(!analysis.dataSourceStatus.marketOdds || !analysis.dataSourceStatus.nfeloModel) && (
+                          <div style={{ marginTop: "8px", fontSize: "11px", color: "#856404", fontWeight: "600" }}>
+                            ⚠ Ensemble modeling degraded - some validation sources unavailable
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {analysis.dataWarnings && analysis.dataWarnings.length > 0 && (
+                      <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
+                          Data Quality Warnings:
+                        </div>
+                        {analysis.dataWarnings.map((warning, idx) => (
+                          <div key={idx} style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
+                            • {warning}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
                     <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                       {analysis.text}
                     </div>
@@ -887,11 +1016,11 @@ export default function App() {
                           
                           {team.data.quarterbacks && team.data.quarterbacks.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
-                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>QBs</div>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Quarterbacks</div>
                               {team.data.quarterbacks.map((qb, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{qb.name}</strong> - {qb.projectedPoints} pts ({qb.confidence})
-                                  <div style={{ color: "#666" }}>{qb.passYards} yds, {qb.passTDs} TDs</div>
+                                  <div style={{ color: "#666" }}>Pass: {qb.passYards} yds, {qb.passTDs} TDs | Rush: {qb.rushYards} yds</div>
                                 </div>
                               ))}
                             </div>
@@ -899,11 +1028,11 @@ export default function App() {
 
                           {team.data.runningBacks && team.data.runningBacks.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
-                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>RBs</div>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Running Backs</div>
                               {team.data.runningBacks.map((rb, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{rb.name}</strong> - {rb.projectedPoints} pts ({rb.confidence})
-                                  <div style={{ color: "#666" }}>{rb.rushYards} rush yds, {rb.receptions} rec</div>
+                                  <div style={{ color: "#666" }}>Rush: {rb.rushYards} yds | Rec: {rb.receptions} rec, {rb.recYards} yds</div>
                                 </div>
                               ))}
                             </div>
@@ -911,7 +1040,7 @@ export default function App() {
 
                           {team.data.receivers && team.data.receivers.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
-                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>WR/TE</div>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Receivers / Tight Ends</div>
                               {team.data.receivers.map((rec, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{rec.name}</strong> - {rec.projectedPoints} pts ({rec.confidence})
@@ -925,7 +1054,7 @@ export default function App() {
                     })}
 
                     <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "11px", color: "#856404" }}>
-                      <strong>Note:</strong> For fantasy/DFS only. Full PPR. 4-game sample. Not for prop betting.
+                      <strong>Note:</strong> For fantasy/DFS only. Full PPR scoring. Based on 4-game sample. Not for prop betting.
                     </div>
                   </div>
                 )}
@@ -941,7 +1070,7 @@ export default function App() {
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.0: Fixed CFB bug • EPA integration • Fantasy projections • Call 1-800-GAMBLER
+            v2.1: API validation • Data quality warnings • Fixed fantasy projections • Ensemble fallback • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
