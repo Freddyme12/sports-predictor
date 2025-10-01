@@ -16,291 +16,251 @@ export default function App() {
   const [backendDataCache, setBackendDataCache] = useState({});
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
+  const [predictionTracking, setPredictionTracking] = useState([]);
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  const systemPrompt = `You are a sports analyst providing rigorous statistical projections and fantasy football analysis.
+  const systemPrompt = `You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.
 
-## SPORT DETECTION
-First, determine which sport you're analyzing based on the dataset:
-- If data contains SP+, success_rate, explosiveness, havoc_rate → College Football (CFB)
-- If data contains EPA, offensive_line_unit, player_statistics → NFL
-- Adapt your methodology accordingly
+## CRITICAL FIXES IMPLEMENTED
 
-## NFELO INTEGRATION (NFL ONLY)
+**CFB Defensive Success Rate - CORRECTED:**
+- LOWER defensive success rate = BETTER defense
+- Formula: (Away Def Success Rate - Home Def Success Rate) × 180
+- If result is NEGATIVE, HOME has better defense (advantage to home)
+- If result is POSITIVE, AWAY has better defense (advantage to away)
 
-When nfelo predictions are available, incorporate them into your analysis:
+**Sign Convention Check:**
+Before finalizing any spread, verify all components have correct signs:
+- Positive components favor HOME team
+- Negative components favor AWAY team
+- Home field advantage is ALWAYS positive (favors home)
 
-**nfelo Model Overview:**
-- Elo-based rating system specifically tuned for NFL
-- Accounts for QB adjustments, rest days, weather, home field
-- Provides win probabilities and expected value vs market lines
-- Open-source model validated against historical performance
+## SPORT DETECTION & METHODOLOGY
 
-**How to Use nfelo Data:**
-1. **Power Ratings Context**: nfelo Elo scores indicate true team strength (1500 = average)
-2. **Momentum Capture**: Recent form reflected in Elo changes
-3. **Market Comparison**: Compare nfelo spread vs your model vs market
-4. **Expected Value**: nfelo flags +EV opportunities when model disagrees with market
-5. **Ensemble Weighting**: Weight predictions as: Your Model (45%), nfelo (30%), Market (25%)
+**CFB Indicators:** SP+, success_rate, explosiveness, havoc_rate
+**NFL Indicators:** EPA, offensive_line_unit, player_statistics, PFF grades
 
-**When nfelo Differs Significantly:**
-- If nfelo spread differs by 3+ points from your model, investigate why
-- Common reasons: QB injury impact, recent performance trends, scheduling factors
-- Use nfelo's QB-specific adjustments to validate your injury calculations
+## COLLEGE FOOTBALL (CFB) PROJECTION - CORRECTED
 
-**Confidence Calibration with nfelo:**
-- Model consensus (all agree): Increase confidence by 1 star
-- Model disagreement (3+ point spread): Reduce confidence by 1 star
-- nfelo shows +EV: Mention as supporting factor
-
-## COLLEGE FOOTBALL (CFB) PROJECTION METHODOLOGY
-
-### CFB SPREAD CALCULATION
-
-Use these weighted factors for CFB (based on Bill Connelly's Five Factors research):
+### CFB Spread Calculation (VERIFIED FORMULAS)
 
 1. **SP+ Differential** (45% weight)
-   - Formula: (Home SP+ Overall - Away SP+ Overall) × 0.18 points per SP+ point
-   - SP+ is tempo-free, opponent-adjusted efficiency metric
+   - (Home SP+ Overall - Away SP+ Overall) × 0.18
+   - Positive = Home advantage, Negative = Away advantage
 
 2. **Offensive Success Rate Gap** (22% weight)
-   - Formula: (Home Off Success Rate - Away Off Success Rate) × 22 points per 0.10 differential
-   - Success Rate = 50% on 1st down, 70% on 2nd, 100% on 3rd/4th
+   - (Home Off Success Rate - Away Off Success Rate) × 220
+   - Higher offensive success rate = better offense
 
-3. **Defensive Success Rate Advantage** (18% weight)
-   - Formula: (Away Def Success Rate - Home Def Success Rate) × 18 points per 0.10 differential
+3. **Defensive Success Rate Advantage** (18% weight) - CORRECTED
+   - (Away Def Success Rate - Home Def Success Rate) × 180
+   - LOWER def success rate is BETTER defense
+   - Negative result = Home has better defense (home advantage)
+   - Positive result = Away has better defense (away advantage)
 
 4. **Explosiveness Differential** (10% weight)
-   - Formula: (Home Explosiveness - Away Explosiveness) × 2.5 points per 0.10 differential
-   - Winning explosiveness battle = 86% win rate
+   - (Home Explosiveness - Away Explosiveness) × 25
+   - Points per 0.10 differential
 
 5. **Havoc Rate Advantage** (5% weight)
-   - Formula: (Home Havoc - Away Havoc) × 12 points per 0.10 differential
+   - (Home Havoc - Away Havoc) × 120
+   - Points per 0.10 differential
 
-**Home Field in CFB:** +3.5 points standard
-- Major conference hostile environments: +4.0
-- High altitude (Air Force, Wyoming): +1.0 additional
+6. **Home Field Advantage:** +3.5 points standard
 
-**Final CFB Projection:** Sum all factors, round to nearest 0.5
+**Verification Steps:**
+1. Calculate each component with sign
+2. Sum all components
+3. Verify final spread makes intuitive sense
+4. If Home SP+ is better but spread favors away, re-check calculations
 
-### CFB INJURY IMPACT (Different from NFL)
+### CFB Third Down & Situational Analysis
+- Analyze third down conversion rates from game_results
+- Red zone efficiency (if available in scoring data)
+- Tempo adjustments based on offensive pace
 
-CFB injuries impact more due to less depth:
-
-**Quarterback Injuries:**
-- Elite to average backup: -6 to -8 points
-- Average to poor backup: -4 to -6 points
-- Good to competent backup: -2 to -4 points
-
-**Non-QB Position Values (Max Impact):**
-- Star RB: 1.5-2 points
-- Elite WR/OL: 1-1.5 points  
-- Key defensive player: 0.8-1.2 points
-
-**Cluster Injuries:** Multiple injuries at same position compound significantly in CFB
-
-### CFB TOTAL PROJECTION
-
-Base Total = [(Home PPG + Away PPG) / 2] × 2 × Tempo Factor
-
-**Tempo Factor:**
-- High tempo (>75 plays/game): 1.12x
-- Average tempo (65-75 plays): 1.00x
-- Slow methodical (<65 plays): 0.92x
-
+### CFB Total Projection
+Base = [(Home PPG + Away PPG) / 2] × 2
 **Adjustments:**
-- SP+ Offense: Each +10 SP+ = +2.5 points to total
-- Explosiveness avg >1.3 = +4 points
-- Weather: Wind >20mph = -6 pts, Rain = -3 pts
+- Explosiveness avg >1.3: +4 points
+- SP+ Offense boost: Each +10 SP+ = +2.5 points
+- Defensive strength: Strong defenses (SP+ Def <25) = -3 points
+- Recent scoring trends from game_results
 
-## NFL SPREAD PROJECTION METHODOLOGY
+## NFL PROJECTION METHODOLOGY - ENHANCED
 
-Calculate spread using these weighted factors:
+### NFL Spread Calculation with EPA
 
-1. **Offensive EPA Differential** (38% weight)
-   - Formula: (Home Off EPA - Away Off EPA) × 32 points per 0.1 EPA
-   - EPA is play-by-play expected points added
+1. **EPA Differential** (40% weight)
+   - Overall EPA gap × 320 points per 0.1 EPA
+   - Pass EPA: (Home Pass EPA - Away Pass EPA) × 280
+   - Rush EPA: (Home Rush EPA - Away Rush EPA) × 160
 
-2. **Defensive EPA Differential** (28% weight)
-   - Formula: (Away Def EPA - Home Def EPA) × 30 points per 0.1 EPA
+2. **Success Rate Differential** (25% weight)
+   - (Home Success Rate - Away Success Rate) × 250
+   - Early down success (if available) weighted 1.2x
 
-3. **O-Line Advantage** (16% weight)
-   - Pass Block Win Rate differential × 0.12 points per 10%
-   - Run Block Win Rate differential × 0.08 points per 10%
+3. **Explosive Play Factor** (15% weight)
+   - (Home Explosive Share - Away Explosive Share) × 150
+   - Pass explosiveness weighted 1.3x vs rush
 
-4. **Red Zone Efficiency Gap** (10% weight)
-   - (Home RZ TD% - Away RZ TD%) × 0.18 points per 1%
+4. **Third Down Efficiency** (10% weight)
+   - (Home 3rd Down - Away 3rd Down) × 100
+   - Critical conversion situations
 
-5. **Home Field Advantage** (8% weight)
-   - Standard: +2.5 points
-   - Denver altitude: +3.0
-   - Hostile environments: +2.8
+5. **Red Zone Efficiency** (10% weight)
+   - (Home RZ TD% - Away RZ TD%) × 80
+   - Finishing drives matters
 
-### NFL INJURY ADJUSTMENTS (Corrected Based on 2025 Oddsmaker Data)
+6. **Home Field:** +2.5 points standard
 
-**Quarterback Impact (Depends on Backup Quality):**
-- Elite QB to average backup (e.g., Allen to Trubisky): 5.5-6 points
-- Top QB to competent backup (e.g., Mahomes to Wentz): 4.5-5.5 points
-- Average QB to poor backup: 3-4 points
-- Good QB to good backup (Montana to Young example): 0.5-1 point
+### NFL O-Line Integration
+- Pass block win rate differential × 12
+- Run block win rate differential × 8
+- Pressure rate differential impact on QB performance
 
-**Non-QB Position Values (Maximum Impact):**
-- Elite RB/WR (Jefferson, Chase, Barkley): 1-1.5 points MAX
-- Star TE: 0.5-0.8 points
-- Multiple WRs out: Compound to 2-2.5 points
-- OL starter: 0.3-0.7 points each
-
-**Cluster Injuries:** Multiple at same position = multiply base × 1.3-1.8
-**Bulk Injuries:** Multiple positions same side of ball = add 0.5-1.5 pts
-
-**CRITICAL:** Most non-QB injuries do NOT significantly move lines
-
-### NFL TOTAL PROJECTION
-
-Base Total = [(Home PPG + Away PPG) / 2] × 2 × Pace Factor
-
+### NFL Total Projection
+Base = Team EPA indicators + pace
 **Pace Factor:**
 - Combined plays >130 = 1.08x
-- Average 122-130 = 1.00x
+- Average 122-130 = 1.00x  
 - Slow <122 = 0.93x
-
 **Adjustments:**
 - Each 0.1 EPA = ±2.8 points
-- Weather: Wind >15mph = -4 pts, Snow = -6 pts
-- Red zone rates: (Avg - 55%) × 0.12 per %
+- Red zone TD rates impact scoring ceiling
+- Third down efficiency affects drive sustainability
 
-## FANTASY FOOTBALL PROJECTIONS
+## ADVANCED INJURY MODELING
 
-### QB Scoring (4pt pass TD, 0.04 per pass yd, 6pt rush TD, 0.1 per rush yd)
+### QB Injuries - Context-Dependent
+**Elite to Average Backup:**
+- QB with passer rating >95 to backup <85: -6 points
+- QB with passer rating 85-95 to backup <75: -5 points
+- Average QB (75-85) to poor backup (<65): -4 points
 
-**Passing:**
-- Base = YPA × Attempts × Pace
-- Opponent Adj = × (1 + Opp Pass EPA / 0.15)
-- Weather: Wind >15mph = ×0.85
+**Non-QB Position Values (Realistic):**
+- Elite RB (>1000 yds pace): -1.2 points
+- Star WR/TE (>100 tgt pace): -1.0 points
+- Multiple WRs (2+ starters): -2.0 points compound
+- O-Line starter: -0.5 points each
 
-**Rushing:**
-- Scrambles × Pressure % × 8 yds
-- Goal line carries × 0.28 TD probability
+**Cluster Multiplier:**
+- 2 injuries same position: ×1.3
+- 3+ injuries same position: ×1.6
+- Bulk injuries (4+ any position): +1.0 flat penalty
 
-**Tiers:**
-- Must Start (QB1): >22 pts
-- Strong Start (QB2): 18-22 pts
-- Streaming: 14-18 pts
+### CFB Injury Impact (Higher due to less depth)
+- Elite QB: -7 points
+- Average QB: -5 points
+- Star RB: -2 points
+- Elite WR/OL: -1.5 points
 
-### RB Scoring (6pt TD, 0.1 rush yd, 1pt rec, 0.1 rec yd)
+## ENSEMBLE MODELING
 
-**Rushing:**
-- Carries = Usage Rate × Team Rushes × Game Script
-- Game Script: Favored 7+ = +15% carries
-- Yards = Carries × YPC × Matchup Factor
+When multiple projections available, weight as:
+- **Your Statistical Model:** 50%
+- **nfelo (NFL only):** 25%
+- **Market Line:** 25%
 
-**Receiving:**
-- Targets = Team Targets × RB Share
-- Trailing in game = more targets
+**Consensus Bonus:**
+- All models within 2 points: +1 confidence star
+- Models disagree by 4+ points: -1 confidence star
+- Your model vs market edge >3 pts: Flag as high variance
 
-**TD Probability:**
-- Goal line work × RZ trips × 0.16
+## CONFIDENCE SCORING (CALIBRATED)
 
-**Tiers:**
-- Must Start: >15 pts
-- Flex: 10-15 pts
-- Desperation: 7-10 pts
+Base confidence from model strength, then adjust:
 
-### WR/TE Scoring (6pt TD, 1pt rec, 0.1 rec yd)
+**Starting Point:**
+- Strong data + model consensus: 4 stars
+- Decent data + some agreement: 3 stars  
+- Limited data or disagreement: 2 stars
+- Weak data or high variance: 1 star
 
-**Targets:**
-- Route % × Team Passes × Pace
-- WR1 = 25-30% target share
-- Injury replacement: +8-12 targets
+**Adjustments:**
+- Model consensus (within 2 pts): +1 star
+- Major injury (QB/multiple starters): -1 star
+- High variance (>4 pt model disagreement): -1 star
+- Market moving against your model: -1 star
 
-**TD Probability:**
-- RZ Target Share × Team RZ Trips × Pass TD Rate
-- WR1 good matchup: 0.6-0.8 TD expected
-
-**Tiers:**
-- Must Start (WR1/2): >14 pts
-- Flex: 9-14 pts
-- Bench: <9 pts
+**Target Win Rates:**
+- 1-2 stars: 52-54% (marginal edge)
+- 3 stars: 55-58% (solid play)
+- 4 stars: 60-65% (strong play)
+- 5 stars: 67%+ (exceptional, rare)
 
 ## OUTPUT STRUCTURE
 
-### FOR CFB:
+### GAME PROJECTION
+**Spread:** [Team] -X.X (Statistical Model)
+**Ensemble Spread:** [Team] -X.X (if multiple models)
+**Total:** XX.X points
+**Win Probability:** XX% / YY%
+**Confidence:** ⭐⭐⭐ (X/5)
 
-**1. GAME PROJECTION**
-Projected Spread: [Team] -X.X
-Projected Total: XX.X
-Win Probability: XX%/YY%
+### KEY METRICS COMPARISON TABLE
+Present home vs away for all major metrics
 
-**Key Metrics:**
-- SP+ Differential: [numbers]
-- Success Rates: Off/Def
-- Explosiveness/Havoc
-- Recruiting rankings
-- Recent form (last 3 games)
+### CALCULATION BREAKDOWN
+Show each formula component:
+1. SP+/EPA component: [calculation] = +/-X.X points
+2. Success rate component: [calculation] = +/-X.X points
+3. [Continue for all factors]
+4. **VERIFY SIGNS:** Check each component makes intuitive sense
+5. Sum with home field = Final Spread
 
-**2. INJURY-ADJUSTED PROJECTIONS**
-Quantified injury impact for each team
-Net differential and confidence adjustment
+### SITUATIONAL FACTORS
+- Recent form (last 3 games with scores)
+- Third down efficiency gap
+- Red zone performance
+- Pace of play impact
+- Key player availability
 
-**3. SCORING BREAKDOWN**
-Show calculations for both teams with specific numbers
+### INJURY IMPACT ANALYSIS
+If injuries present:
+- Quantified impact per player
+- Cluster/bulk penalties
+- Net differential
+- Confidence adjustment
 
-**4. SITUATIONAL ANALYSIS**
-- Conference dynamics
-- Rivalry factors
-- Bye weeks, lookahead spots
-- Coaching matchups
-- Motivation factors
+### BETTING RECOMMENDATIONS
+**Primary Pick:** [Side/Total] ⭐⭐⭐⭐
+- Model edge: X.X points vs market
+- Ensemble agreement: [consensus/split]
+- Expected value: [if calculable]
 
-**5. BETTING RECOMMENDATIONS**
-Primary Pick with confidence (1-5 stars)
-Key supporting factors
-Risk factors
+**Risk Factors:**
+- List specific concerns
+- Model disagreements
+- Volatility indicators
 
-### FOR NFL:
-
-**1. GAME PROJECTION**
-Same as CFB
-
-**2. INJURY-ADJUSTED PROJECTIONS**
-QB impact based on backup quality
-Position-specific impacts
-Cluster/bulk injury analysis
-
-**3. SCORING BREAKDOWN**
-EPA-based calculations
-O-Line advantages
-Red zone efficiency
-
-**4. FANTASY RECOMMENDATIONS**
-Detailed QB/RB/WR/TE projections
-
-**5. BETTING RECOMMENDATIONS**
-Market comparison
-Value identification
-
-## CONFIDENCE CALIBRATION
-
-⭐ (30-45%): Weak signal
-⭐⭐ (45-55%): Slight edge
-⭐⭐⭐ (55-65%): Solid play
-⭐⭐⭐⭐ (65-75%): Strong play
-⭐⭐⭐⭐⭐ (75%+): Exceptional
+**Performance Tracking:**
+- Track your predictions vs outcomes
+- Calculate actual win rate by confidence level
+- Monitor CLV (closing line value)
 
 ## CRITICAL RULES
 
-1. Show all calculations explicitly
-2. Cite specific dataset numbers
-3. Account for backup quality in QB injuries
-4. Most non-QB injuries don't significantly move lines
-5. Be realistic about variance
-6. Need 52.4% accuracy to break even at -110
+1. **Always verify defensive calculations:** Lower def success rate = better defense
+2. **Check signs before finalizing:** Each component should make logical sense
+3. **Show all calculations explicitly**
+4. **Use ensemble weighting when multiple models available**
+5. **Calibrate confidence based on data quality and model agreement**
+6. **Be realistic:** 54-56% accuracy is excellent, not 70%+
+7. **Account for regression:** Recent outlier performances may not repeat
+8. **Third down and red zone efficiency are predictive**
+9. **Most non-QB injuries have minimal line impact**
+10. **Market line contains information - respect it**
 
-Educational purposes only. Sports betting is -EV for most bettors.`;
+## RESPONSE FORMAT
+
+Use clear headers, bullet points for readability. Bold key numbers. Create comparison tables for metrics. Show calculation work. Be concise but comprehensive.
+
+**Remember:** Need 52.4% to break even at -110. Educational purposes only. Most bettors lose long-term.`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -310,183 +270,17 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     { key: "icehockey_nhl", title: "NHL" },
   ];
 
-  const fetchBackendDataForTeam = async (teamName, sport, year, week) => {
-    try {
-      let endpoint;
-      let params = `?year=${year}&week=${week}`;
-      
-      if (sport === "americanfootball_nfl") {
-        endpoint = `${BACKEND_URL}/api/nfl-enhanced-data`;
-        params = `?season=${year}&week=${week}`;
-      } else if (sport === "americanfootball_ncaaf") {
-        endpoint = `${BACKEND_URL}/api/cfb-enhanced-data`;
-      } else {
-        return null;
-      }
-      
-      const response = await fetch(endpoint + params);
-      if (!response.ok) {
-        console.warn(`Backend API error: ${response.status}`);
-        return null;
-      }
-      
-      const data = await response.json();
-      if (data.error || !data.games) {
-        return null;
-      }
-      
-      return data.games;
-    } catch (err) {
-      console.error('Backend fetch error:', err);
-      return null;
-    }
-  };
-
-  const supplementGameDataFromBackend = async (games, sport) => {
-    setBackendFetchStatus('fetching');
-    console.log('=== SUPPLEMENTING DATA FROM BACKEND ===');
-    
-    const currentYear = new Date().getFullYear();
-    const estimatedWeek = 5;
-    
-    try {
-      const backendGames = await fetchBackendDataForTeam(null, sport, currentYear, estimatedWeek);
-      
-      if (!backendGames || backendGames.length === 0) {
-        console.log('No backend data available');
-        setBackendFetchStatus('unavailable');
-        return games;
-      }
-      
-      console.log(`Backend returned ${backendGames.length} games for matching`);
-      
-      const supplementedGames = games.map(jsonGame => {
-        const matchingBackendGame = backendGames.find(bgGame => {
-          if (!bgGame.home_team || !bgGame.away_team) return false;
-          
-          const normalizeTeam = (name) => (name || '').toLowerCase().replace(/[^a-z]/g, '');
-          const jsonHome = normalizeTeam(jsonGame.home_team);
-          const jsonAway = normalizeTeam(jsonGame.away_team);
-          const bgHome = normalizeTeam(bgGame.home_team);
-          const bgAway = normalizeTeam(bgGame.away_team);
-          
-          return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
-                 (jsonAway.includes(bgAway) || bgAway.includes(jsonAway));
-        });
-        
-        if (matchingBackendGame) {
-          console.log(`✓ Backend data found for: ${jsonGame.away_team} @ ${jsonGame.home_team}`);
-          
-          const mergedGameData = { ...jsonGame.datasetGame };
-          
-          if (matchingBackendGame.team_data) {
-            mergedGameData.team_data = {
-              home: { ...(mergedGameData.team_data?.home || {}), ...matchingBackendGame.team_data.home },
-              away: { ...(mergedGameData.team_data?.away || {}), ...matchingBackendGame.team_data.away }
-            };
-          }
-          
-          if (matchingBackendGame.epa_stats) {
-            mergedGameData.epa_stats = { ...(mergedGameData.epa_stats || {}), ...matchingBackendGame.epa_stats };
-          }
-          if (matchingBackendGame.player_statistics) {
-            mergedGameData.player_statistics = { ...(mergedGameData.player_statistics || {}), ...matchingBackendGame.player_statistics };
-          }
-          if (matchingBackendGame.team_statistics) {
-            mergedGameData.team_statistics = { ...(mergedGameData.team_statistics || {}), ...matchingBackendGame.team_statistics };
-          }
-          
-          setBackendDataCache(prev => ({
-            ...prev,
-            [jsonGame.id]: { merged: true, source: 'backend' }
-          }));
-          
-          return {
-            ...jsonGame,
-            datasetGame: mergedGameData,
-            hasBackendData: true
-          };
-        }
-        
-        return jsonGame;
-      });
-      
-      const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
-      console.log(`Successfully merged backend data for ${mergedCount}/${games.length} games`);
-      setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
-      
-      return supplementedGames;
-    } catch (err) {
-      console.error('Backend supplementing failed:', err);
-      setBackendFetchStatus('error');
-      return games;
-    }
-  };
-
-  const fetchNfeloData = async () => {
-    if (selectedSport !== "americanfootball_nfl") {
-      setNfeloAvailable(false);
-      return null;
-    }
-    
-    try {
-      const currentYear = new Date().getFullYear();
-      const currentWeek = 5;
-      
-      const sources = [
-        `https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_${currentYear}_week${currentWeek}.json`,
-        `https://www.nfeloapp.com/api/predictions?week=${currentWeek}&season=${currentYear}`
-      ];
-      
-      for (const source of sources) {
-        try {
-          const response = await fetch(source);
-          if (response.ok) {
-            const data = await response.json();
-            if (data && (data.games || data.predictions)) {
-              setNfeloData(data);
-              setNfeloAvailable(true);
-              console.log('nfelo data loaded successfully');
-              return data;
-            }
-          }
-        } catch (err) {
-          continue;
-        }
-      }
-      
-      console.log('nfelo data not available from any source');
-      setNfeloAvailable(false);
-      return null;
-    } catch (err) {
-      console.error("nfelo data fetch failed:", err);
-      setNfeloAvailable(false);
-      return null;
-    }
-  };
-
   const calculateAdvancedFeatures = (gameData) => {
-    if (!gameData) {
-      console.log('calculateAdvancedFeatures: No gameData provided');
-      return null;
-    }
+    if (!gameData) return null;
 
+    // CFB Detection
     if (gameData.team_data) {
       const home = gameData.team_data.home;
       const away = gameData.team_data.away;
+      if (!home || !away) return null;
 
-      if (!home || !away) {
-        console.log('calculateAdvancedFeatures: Missing home or away team data');
-        return null;
-      }
-
-      const hasValidData = home.sp_overall || home.off_success_rate || home.points_per_game ||
-                          away.sp_overall || away.off_success_rate || away.points_per_game;
-      
-      if (!hasValidData) {
-        console.log('calculateAdvancedFeatures: All CFB metrics are zero - data not available');
-        return null;
-      }
+      const hasValidData = home.sp_overall !== undefined || home.off_success_rate !== undefined;
+      if (!hasValidData) return null;
 
       return {
         sport: 'CFB',
@@ -503,74 +297,219 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         awayDefenseRating: away.sp_defense || 0,
         homeOffenseRating: home.sp_offense || 0,
         awayOffenseRating: away.sp_offense || 0,
-        homeRecruitingRank: home.recruiting_rank,
-        homeRecruitingPoints: home.recruiting_points,
-        awayRecruitingRank: away.recruiting_rank,
-        awayRecruitingPoints: away.recruiting_points
+        homeGamesPlayed: home.games_played || 0,
+        awayGamesPlayed: away.games_played || 0,
+        homeRecentResults: home.game_results || [],
+        awayRecentResults: away.game_results || []
       };
     }
 
-    const home = gameData.player_statistics?.[gameData.teams?.home]?.offensive_line_unit || 
-                 gameData.epa_stats?.home;
-    const away = gameData.player_statistics?.[gameData.teams?.away]?.offensive_line_unit ||
-                 gameData.epa_stats?.away;
-    const homeSpecial = gameData.team_statistics?.[gameData.teams?.home]?.special_teams;
-    const awaySpecial = gameData.team_statistics?.[gameData.teams?.away]?.special_teams;
-    const pace = gameData.matchup_specific?.pace_of_play_proxy;
+    // NFL Detection
+    const teamStats = gameData.team_statistics;
+    if (teamStats) {
+      const homeTeam = gameData.teams?.home;
+      const awayTeam = gameData.teams?.away;
+      const home = teamStats[homeTeam];
+      const away = teamStats[awayTeam];
+      
+      if (!home || !away) return null;
 
-    if (!home || !away) return null;
+      return {
+        sport: 'NFL',
+        homeEPA: home.offense?.epa_per_play?.overall || 0,
+        awayEPA: away.offense?.epa_per_play?.overall || 0,
+        homePassEPA: home.offense?.epa_per_play?.pass || 0,
+        awayPassEPA: away.offense?.epa_per_play?.pass || 0,
+        homeRushEPA: home.offense?.epa_per_play?.rush || 0,
+        awayRushEPA: away.offense?.epa_per_play?.rush || 0,
+        homeSuccessRate: home.offense?.success_rate?.overall || 0,
+        awaySuccessRate: away.offense?.success_rate?.overall || 0,
+        homeExplosiveShare: home.offense?.explosive_play_share?.overall || 0,
+        awayExplosiveShare: away.offense?.explosive_play_share?.overall || 0,
+        homeThirdDown: home.offense?.third_down?.overall || 0,
+        awayThirdDown: away.offense?.third_down?.overall || 0,
+        homeRedZoneTD: home.offense?.red_zone?.td_rate || 0,
+        awayRedZoneTD: away.offense?.red_zone?.td_rate || 0,
+        homeDefEPA: home.defense?.epa_per_play_allowed?.overall || 0,
+        awayDefEPA: away.defense?.epa_per_play_allowed?.overall || 0,
+        homePressureAllowed: home.offense?.pressure_rate_allowed || 0,
+        awayPressureAllowed: away.offense?.pressure_rate_allowed || 0,
+        homePace: gameData.matchup_specific?.pace_of_play_proxy?.[homeTeam] || 0,
+        awayPace: gameData.matchup_specific?.pace_of_play_proxy?.[awayTeam] || 0,
+        homePassBlockWR: gameData.player_statistics?.[homeTeam]?.offensive_line_unit?.pass_block_win_rate || 0,
+        awayPassBlockWR: gameData.player_statistics?.[awayTeam]?.offensive_line_unit?.pass_block_win_rate || 0,
+        homeRunBlockWR: gameData.player_statistics?.[homeTeam]?.offensive_line_unit?.run_block_win_rate || 0,
+        awayRunBlockWR: gameData.player_statistics?.[awayTeam]?.offensive_line_unit?.run_block_win_rate || 0,
+        homePFFOverall: gameData.player_statistics?.[homeTeam]?.pff_grades?.overall || 0,
+        awayPFFOverall: gameData.player_statistics?.[awayTeam]?.pff_grades?.overall || 0
+      };
+    }
+
+    return null;
+  };
+
+  const calculateStatisticalPrediction = (gameData, advancedFeatures, injuryImpact) => {
+    if (!advancedFeatures) return null;
+
+    if (advancedFeatures.sport === 'CFB') {
+      let homeAdvantage = 3.5;
+      
+      const spComponent = advancedFeatures.spPlusDiff * 0.18 * 0.45;
+      const offSRComponent = advancedFeatures.offSuccessRateDiff * 220 * 0.22;
+      const defSRComponent = advancedFeatures.defSuccessRateAdvantage * 180 * 0.18;
+      const explosiveComponent = advancedFeatures.explosivenessDiff * 25 * 0.10;
+      const havocComponent = advancedFeatures.havocRateDiff * 120 * 0.05;
+      
+      homeAdvantage += spComponent + offSRComponent + defSRComponent + explosiveComponent + havocComponent;
+      homeAdvantage -= injuryImpact.home;
+      homeAdvantage += injuryImpact.away;
+
+      const projectedSpread = Math.round(homeAdvantage * 2) / 2;
+      const basePPG = (advancedFeatures.homePPG + advancedFeatures.awayPPG) / 2;
+      let projectedTotal = basePPG * 2;
+      
+      const avgExplosiveness = (advancedFeatures.explosivenessDiff + 
+        (advancedFeatures.homeRecentResults?.[0]?.points_for || 0) / 35) / 2;
+      if (avgExplosiveness > 1.3) projectedTotal += 4;
+      
+      projectedTotal += ((advancedFeatures.homeOffenseRating + advancedFeatures.awayOffenseRating) / 20) * 2.5;
+
+      const baseConfidence = 3;
+      let confidence = baseConfidence - injuryImpact.confidenceReduction;
+      
+      if (advancedFeatures.homeGamesPlayed < 3 || advancedFeatures.awayGamesPlayed < 3) {
+        confidence = Math.max(1, confidence - 1);
+      }
+
+      return {
+        projectedSpread,
+        projectedTotal: Math.round(projectedTotal * 2) / 2,
+        confidence: Math.max(1, Math.min(5, confidence)),
+        homeScore: (projectedTotal / 2) + (projectedSpread / 2),
+        awayScore: (projectedTotal / 2) - (projectedSpread / 2),
+        sport: 'CFB',
+        components: {
+          spPlus: spComponent,
+          offensiveSuccess: offSRComponent,
+          defensiveSuccess: defSRComponent,
+          explosiveness: explosiveComponent,
+          havoc: havocComponent,
+          homeField: 3.5,
+          injuries: injuryImpact.differential
+        }
+      };
+    }
+
+    // NFL Calculation
+    let homeAdvantage = 2.5;
+    
+    const epaComponent = (advancedFeatures.homeEPA - advancedFeatures.awayEPA) * 320 * 0.40;
+    const successRateComponent = (advancedFeatures.homeSuccessRate - advancedFeatures.awaySuccessRate) * 250 * 0.25;
+    const explosiveComponent = (advancedFeatures.homeExplosiveShare - advancedFeatures.awayExplosiveShare) * 150 * 0.15;
+    const thirdDownComponent = (advancedFeatures.homeThirdDown - advancedFeatures.awayThirdDown) * 100 * 0.10;
+    const redZoneComponent = (advancedFeatures.homeRedZoneTD - advancedFeatures.awayRedZoneTD) * 80 * 0.10;
+    
+    const oLineComponent = (
+      (advancedFeatures.homePassBlockWR - advancedFeatures.awayPassBlockWR) * 0.12 +
+      (advancedFeatures.homeRunBlockWR - advancedFeatures.awayRunBlockWR) * 0.08
+    );
+    
+    homeAdvantage += epaComponent + successRateComponent + explosiveComponent + 
+                     thirdDownComponent + redZoneComponent + oLineComponent;
+    homeAdvantage -= injuryImpact.home;
+    homeAdvantage += injuryImpact.away;
+
+    const projectedSpread = Math.round(homeAdvantage * 2) / 2;
+    
+    const combinedPace = (advancedFeatures.homePace + advancedFeatures.awayPace);
+    const paceFactor = combinedPace > 130 ? 1.08 : combinedPace < 122 ? 0.93 : 1.00;
+    let projectedTotal = (combinedPace * 0.68 * paceFactor);
+    
+    projectedTotal += ((advancedFeatures.homeEPA + advancedFeatures.awayEPA) / 2) * 28;
+
+    let confidence = 3;
+    confidence -= injuryImpact.confidenceReduction;
 
     return {
+      projectedSpread,
+      projectedTotal: Math.round(projectedTotal * 2) / 2,
+      confidence: Math.max(1, Math.min(5, confidence)),
+      homeScore: projectedTotal ? ((projectedTotal / 2) + (projectedSpread / 2)) : null,
+      awayScore: projectedTotal ? ((projectedTotal / 2) - (projectedSpread / 2)) : null,
       sport: 'NFL',
-      passBlockAdvantage: (home.pass_block_win_rate || 0) - (away.pass_block_win_rate || 0),
-      runBlockAdvantage: (home.run_block_win_rate || 0) - (away.run_block_win_rate || 0),
-      pressureIndex: ((away.sacks_allowed || 0) / (away.pass_block_win_rate || 1)) - 
-                     ((home.sacks_allowed || 0) / (home.pass_block_win_rate || 1)),
-      homeOLineScore: ((home.pass_block_win_rate || 0) * 0.4) + ((home.run_block_win_rate || 0) * 0.3) - 
-                      ((home.sacks_allowed || 0) * 2) - ((home.stuff_rate || 0) * 0.5),
-      awayOLineScore: ((away.pass_block_win_rate || 0) * 0.4) + ((away.run_block_win_rate || 0) * 0.3) - 
-                      ((away.sacks_allowed || 0) * 2) - ((away.stuff_rate || 0) * 0.5),
-      fieldPositionAdvantage: (homeSpecial?.avg_starting_field_pos || 0) - 
-                              (awaySpecial?.avg_starting_field_pos || 0),
-      fieldPositionPointValue: ((homeSpecial?.avg_starting_field_pos || 0) - 
-                                (awaySpecial?.avg_starting_field_pos || 0)) / 3,
-      combinedPace: pace ? ((pace[gameData.teams?.home] + pace[gameData.teams?.away]) / 2) : null,
-      paceTotal: pace ? (pace[gameData.teams?.home] + pace[gameData.teams?.away]) : null,
-      paceTotalIndicator: pace ? ((pace[gameData.teams?.home] + pace[gameData.teams?.away]) > 126 ? "OVER" : "UNDER") : null,
-      paceFactor: pace ? ((pace[gameData.teams?.home] + pace[gameData.teams?.away]) / 126) : 1.0,
-      offenseEPA: gameData.epa_stats?.offense_epa,
-      defenseEPA: gameData.epa_stats?.defense_epa,
-      successRate: gameData.success_rates
+      components: {
+        epa: epaComponent,
+        successRate: successRateComponent,
+        explosiveness: explosiveComponent,
+        thirdDown: thirdDownComponent,
+        redZone: redZoneComponent,
+        oLine: oLineComponent,
+        homeField: 2.5,
+        injuries: injuryImpact.differential
+      }
     };
   };
 
-  const quantifyInjuryImpact = (espnData, isCFB = false) => {
-    if (!espnData?.home || !espnData?.away) return { home: 0, away: 0, total: 0 };
-
-    const nflImpactScores = {
-      'qb': 5.0, 'quarterback': 5.0,
-      'rb': 1.0, 'running back': 1.0,
-      'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0,
-      'te': 0.6, 'tight end': 0.6,
-      'ol': 0.5, 'offensive line': 0.5, 'guard': 0.5, 'tackle': 0.5, 'center': 0.5,
-      'de': 0.4, 'defensive end': 0.4, 'edge': 0.4,
-      'dt': 0.3, 'defensive tackle': 0.3,
-      'lb': 0.4, 'linebacker': 0.4,
-      'cb': 0.5, 'cornerback': 0.5,
-      's': 0.4, 'safety': 0.4
+  const calculateEnsemblePrediction = (statProjection, nfeloPrediction, marketSpread) => {
+    if (!statProjection) return null;
+    
+    let ensembleSpread = statProjection.projectedSpread;
+    let weights = { model: 0.50, nfelo: 0.25, market: 0.25 };
+    const models = [statProjection.projectedSpread];
+    
+    if (nfeloPrediction?.predicted_spread !== undefined) {
+      models.push(nfeloPrediction.predicted_spread);
+      ensembleSpread = (
+        (statProjection.projectedSpread * 0.50) +
+        (nfeloPrediction.predicted_spread * 0.25) +
+        ((marketSpread || 0) * 0.25)
+      );
+    } else if (marketSpread !== undefined) {
+      models.push(marketSpread);
+      ensembleSpread = (
+        (statProjection.projectedSpread * 0.65) +
+        (marketSpread * 0.35)
+      );
+      weights = { model: 0.65, nfelo: 0, market: 0.35 };
+    }
+    
+    let consensusBonus = 0;
+    if (models.length >= 2) {
+      const maxDiff = Math.max(...models) - Math.min(...models);
+      if (maxDiff < 2) consensusBonus = 1;
+      else if (maxDiff > 4) consensusBonus = -1;
+    }
+    
+    return {
+      ensembleSpread: Math.round(ensembleSpread * 2) / 2,
+      baseSpread: statProjection.projectedSpread,
+      nfeloSpread: nfeloPrediction?.predicted_spread,
+      marketSpread,
+      weights,
+      consensusConfidence: Math.max(1, Math.min(5, (statProjection.confidence || 3) + consensusBonus)),
+      hasConsensus: consensusBonus > 0,
+      hasDisagreement: consensusBonus < 0,
+      modelEdge: marketSpread ? Math.abs(statProjection.projectedSpread - marketSpread) : null
     };
+  };
+
+  const quantifyInjuryImpact = (espnData, isCFB = false, playerStats = null) => {
+    if (!espnData?.home || !espnData?.away) return { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0 };
 
     const cfbImpactScores = {
       'qb': 7.0, 'quarterback': 7.0,
-      'rb': 1.5, 'running back': 1.5,
-      'wr': 1.2, 'wide receiver': 1.2, 'receiver': 1.2,
-      'te': 0.8, 'tight end': 0.8,
-      'ol': 0.7, 'offensive line': 0.7, 'guard': 0.7, 'tackle': 0.7, 'center': 0.7,
-      'de': 0.6, 'defensive end': 0.6, 'edge': 0.6,
-      'dt': 0.5, 'defensive tackle': 0.5,
-      'lb': 0.6, 'linebacker': 0.6,
-      'cb': 0.7, 'cornerback': 0.7,
-      's': 0.5, 'safety': 0.5
+      'rb': 2.0, 'running back': 2.0,
+      'wr': 1.5, 'wide receiver': 1.5, 'receiver': 1.5,
+      'te': 1.0, 'tight end': 1.0,
+      'ol': 1.0, 'offensive line': 1.0, 'guard': 1.0, 'tackle': 1.0
+    };
+
+    const nflImpactScores = {
+      'qb': 5.5, 'quarterback': 5.5,
+      'rb': 1.2, 'running back': 1.2,
+      'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0,
+      'te': 0.6, 'tight end': 0.6,
+      'ol': 0.5, 'offensive line': 0.5, 'guard': 0.5, 'tackle': 0.5
     };
 
     const impactScores = isCFB ? cfbImpactScores : nflImpactScores;
@@ -578,6 +517,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     const calculateInjuries = (injuries) => {
       const positionCount = {};
       let totalImpact = 0;
+      let qbInjured = false;
 
       injuries.forEach(inj => {
         const headline = inj.headline.toLowerCase();
@@ -590,6 +530,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           if (headline.includes(pos)) {
             impact = Math.max(impact, value);
             positionCount[pos] = (positionCount[pos] || 0) + 1;
+            if (pos === 'qb' || pos === 'quarterback') qbInjured = true;
             break;
           }
         }
@@ -597,11 +538,15 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         totalImpact += (impact * severity);
       });
 
-      Object.values(positionCount).forEach(count => {
-        if (count >= 2) {
+      Object.entries(positionCount).forEach(([pos, count]) => {
+        if (count >= 2 && pos !== 'qb') {
           totalImpact *= (1 + (count - 1) * 0.3);
         }
       });
+
+      if (injuries.length >= 4 && !qbInjured) {
+        totalImpact += 1.0;
+      }
 
       return totalImpact;
     };
@@ -614,58 +559,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       away: awayImpact,
       total: homeImpact + awayImpact,
       differential: homeImpact - awayImpact,
-      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 4), 2)
-    };
-  };
-
-  const calculateStatisticalPrediction = (gameData, advancedFeatures, injuryImpact) => {
-    if (!advancedFeatures) return null;
-
-    if (advancedFeatures.sport === 'CFB') {
-      let homeAdvantage = 3.5;
-      homeAdvantage += advancedFeatures.spPlusDiff * 0.18 * 0.45;
-      homeAdvantage += advancedFeatures.offSuccessRateDiff * 22 * 0.22;
-      homeAdvantage += advancedFeatures.defSuccessRateAdvantage * 18 * 0.18;
-      homeAdvantage += advancedFeatures.explosivenessDiff * 2.5 * 0.10;
-      homeAdvantage += advancedFeatures.havocRateDiff * 12 * 0.05;
-      
-      homeAdvantage -= injuryImpact.home;
-      homeAdvantage += injuryImpact.away;
-
-      const projectedSpread = Math.round(homeAdvantage * 2) / 2;
-      const basePPG = (advancedFeatures.homePPG + advancedFeatures.awayPPG) / 2;
-      let projectedTotal = basePPG * 2;
-      projectedTotal += (advancedFeatures.homeOffenseRating / 10) * 0.125;
-      projectedTotal += (advancedFeatures.awayOffenseRating / 10) * 0.125;
-
-      return {
-        projectedSpread,
-        projectedTotal: Math.round(projectedTotal * 2) / 2,
-        confidence: Math.max(1, 3 - injuryImpact.confidenceReduction),
-        homeScore: (projectedTotal / 2) + (projectedSpread / 2),
-        awayScore: (projectedTotal / 2) - (projectedSpread / 2),
-        sport: 'CFB'
-      };
-    }
-
-    let homeAdvantage = 2.5;
-    homeAdvantage += (advancedFeatures.passBlockAdvantage * 0.012);
-    homeAdvantage += (advancedFeatures.runBlockAdvantage * 0.008);
-    homeAdvantage += advancedFeatures.fieldPositionPointValue;
-    
-    homeAdvantage -= injuryImpact.home;
-    homeAdvantage += injuryImpact.away;
-    
-    const projectedSpread = Math.round(homeAdvantage * 2) / 2;
-    const projectedTotal = advancedFeatures.combinedPace ? (advancedFeatures.combinedPace * 0.68) : null;
-
-    return {
-      projectedSpread,
-      projectedTotal,
-      confidence: Math.max(1, 3 - injuryImpact.confidenceReduction),
-      homeScore: projectedTotal ? ((projectedTotal / 2) + (projectedSpread / 2)) : null,
-      awayScore: projectedTotal ? ((projectedTotal / 2) - (projectedSpread / 2)) : null,
-      sport: 'NFL'
+      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 3.5), 2)
     };
   };
 
@@ -681,7 +575,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       
       if (spreadMarket) {
         spreadMarket.outcomes.forEach(outcome => {
-          if (outcome.name === game.home_team && (!bestHomeSpread || outcome.point < bestHomeSpread.point)) {
+          if (outcome.name === game.home_team && (!bestHomeSpread || Math.abs(outcome.point) < Math.abs(bestHomeSpread.point))) {
             bestHomeSpread = { point: outcome.point, price: outcome.price, book: book.title };
           }
         });
@@ -698,100 +592,18 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     const marketSpread = bestHomeSpread.point;
     const projectedSpread = statProjection.projectedSpread;
     const spreadDiff = projectedSpread - marketSpread;
-    const winProb = 0.5 + (spreadDiff * 0.03);
-    const expectedValue = ((winProb * 0.91) - ((1 - winProb) * 1)) * 100;
-
-    const totalEdge = bestTotal && statProjection.projectedTotal ? 
-      (statProjection.projectedTotal - bestTotal.point) : 0;
 
     return {
       marketSpread,
       projectedSpread,
       spreadDifferential: Math.abs(spreadDiff),
       spreadRecommendation: spreadDiff > 0 ? 'HOME' : 'AWAY',
-      expectedValue,
-      hasValue: Math.abs(expectedValue) > 3,
       bestLine: bestHomeSpread,
       confidence: statProjection.confidence,
       marketTotal: bestTotal?.point,
       projectedTotal: statProjection.projectedTotal,
-      totalEdge: Math.abs(totalEdge),
-      totalRecommendation: totalEdge > 0 ? 'OVER' : 'UNDER'
-    };
-  };
-
-  const findNfeloPrediction = (game) => {
-    if (!nfeloData || !nfeloAvailable) return null;
-    
-    if (!game.home_team || !game.away_team) return null;
-    
-    const normalizeTeamName = (name) => {
-      return (name || '').toLowerCase().replace(/[^a-z]/g, '');
-    };
-    
-    const gameHome = normalizeTeamName(game.home_team);
-    const gameAway = normalizeTeamName(game.away_team);
-    
-    if (!gameHome || !gameAway) return null;
-    
-    const predictions = nfeloData.games || nfeloData.predictions || [];
-    
-    return predictions.find(pred => {
-      const predHome = normalizeTeamName(pred.home_team || pred.home || '');
-      const predAway = normalizeTeamName(pred.away_team || pred.away || '');
-      
-      return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
-             (gameAway.includes(predAway) || predAway.includes(gameAway));
-    });
-  };
-
-  const calculateEnsemblePrediction = (statProjection, nfeloPrediction, marketSpread) => {
-    if (!statProjection) return null;
-    
-    let ensembleSpread = statProjection.projectedSpread;
-    let weights = { model: 0.60, nfelo: 0.15, market: 0.25 };
-    
-    if (nfeloPrediction && nfeloPrediction.predicted_spread !== undefined) {
-      ensembleSpread = (
-        (statProjection.projectedSpread * 0.45) +
-        (nfeloPrediction.predicted_spread * 0.30) +
-        (marketSpread * 0.25)
-      );
-      weights = { model: 0.45, nfelo: 0.30, market: 0.25 };
-    } else if (marketSpread !== undefined) {
-      ensembleSpread = (
-        (statProjection.projectedSpread * 0.65) +
-        (marketSpread * 0.35)
-      );
-      weights = { model: 0.65, nfelo: 0, market: 0.35 };
-    }
-    
-    let consensusBonus = 0;
-    if (nfeloPrediction && marketSpread !== undefined) {
-      const spreads = [
-        statProjection.projectedSpread,
-        nfeloPrediction.predicted_spread,
-        marketSpread
-      ].filter(s => s !== undefined);
-      
-      const maxDiff = Math.max(...spreads) - Math.min(...spreads);
-      
-      if (maxDiff < 2) {
-        consensusBonus = 1;
-      } else if (maxDiff > 4) {
-        consensusBonus = -1;
-      }
-    }
-    
-    return {
-      ensembleSpread: Math.round(ensembleSpread * 2) / 2,
-      baseSpread: statProjection.projectedSpread,
-      nfeloSpread: nfeloPrediction?.predicted_spread,
-      marketSpread,
-      weights,
-      consensusConfidence: Math.max(1, Math.min(5, (statProjection.confidence || 3) + consensusBonus)),
-      hasConsensus: consensusBonus > 0,
-      hasDisagreement: consensusBonus < 0
+      totalEdge: bestTotal ? Math.abs(statProjection.projectedTotal - bestTotal.point) : 0,
+      totalRecommendation: bestTotal && statProjection.projectedTotal > bestTotal.point ? 'OVER' : 'UNDER'
     };
   };
 
@@ -811,82 +623,50 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
   const fetchESPNData = async (teamName, sport) => {
     if (!teamName || typeof teamName !== 'string' || teamName === 'Unknown Home' || teamName === 'Unknown Away') {
-      console.warn('Skipping injury fetch for invalid team name:', teamName);
       return { team: teamName || 'Unknown', injuries: [], lastUpdated: new Date().toISOString(), source: 'none' };
     }
     
     try {
       const sportMap = { 
         'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football',
-        'basketball_nba': 'basketball/nba',
-        'baseball_mlb': 'baseball/mlb',
-        'icehockey_nhl': 'hockey/nhl'
+        'americanfootball_ncaaf': 'football/college-football'
       };
       const sportPath = sportMap[sport] || 'football/nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : sport.replace('americanfootball_', ''));
+      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
       
-      // Changed to espn-proxy to match your backend file name
       const proxyUrl = `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamAbbr)}`;
       
-      console.log(`Fetching injuries for ${teamName} (${teamAbbr}) via backend...`);
-      
-      const response = await fetch(proxyUrl, {
-        signal: AbortSignal.timeout(10000)
-      });
+      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
 
       if (!response.ok) {
-        console.warn(`Backend proxy returned ${response.status} for ${teamName}`);
         return { team: teamName, injuries: [], lastUpdated: new Date().toISOString(), source: 'failed' };
       }
 
       const data = await response.json();
       
       if (!data.success) {
-        console.warn(`Backend unsuccessful for ${teamName}:`, data.error || data.message);
         return { team: teamName, injuries: [], lastUpdated: new Date().toISOString(), source: data.source || 'failed' };
       }
-      
-      // Track which API source provided the data
-      const source = data.source || 'unknown';
-      const fallbackUsed = data.fallbackUsed || false;
-      
-      console.log(`✓ Loaded ${data.count || data.injuries.length} injuries for ${teamName} from ${source}${fallbackUsed ? ' (fallback)' : ''}`);
-      
-      // Update injury API status tracking
-      setInjuryApiStatus(prev => ({
-        ...prev,
-        sources: {
-          ...prev.sources,
-          [teamName]: { source, fallbackUsed, count: data.count || 0 }
-        }
-      }));
       
       return { 
         team: teamName, 
         injuries: data.injuries || [],
         lastUpdated: data.lastUpdated || new Date().toISOString(),
-        source: source,
-        fallbackUsed: fallbackUsed,
-        rateLimit: data.rateLimit
+        source: data.source || 'unknown',
+        fallbackUsed: data.fallbackUsed || false
       };
     } catch (error) {
-      console.error(`Injury fetch failed for ${teamName}:`, error.message);
       return { 
         team: teamName, 
         injuries: [], 
         lastUpdated: new Date().toISOString(),
-        source: 'error',
-        error: error.message 
+        source: 'error'
       };
     }
   };
 
   const getTeamAbbreviation = (teamName, sport) => {
-    if (!teamName || typeof teamName !== 'string') {
-      console.warn('getTeamAbbreviation called with invalid teamName:', teamName);
-      return 'unknown';
-    }
+    if (!teamName || typeof teamName !== 'string') return 'unknown';
     
     const nflTeams = {
       'Arizona Cardinals': 'ari', 'Atlanta Falcons': 'atl', 'Baltimore Ravens': 'bal',
@@ -902,46 +682,14 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       'Tennessee Titans': 'ten', 'Washington Commanders': 'wsh'
     };
 
-    const cfbTeams = {
-      'Boston College': 'bc', 'Clemson': 'clem', 'Duke': 'duke',
-      'Florida State': 'fsu', 'Georgia Tech': 'gt',
-      'Louisville': 'lou', 'Miami': 'miami', 'NC State': 'ncst',
-      'North Carolina': 'unc', 'Pittsburgh': 'pitt', 'Syracuse': 'cuse',
-      'Virginia': 'uva', 'Virginia Tech': 'vt', 'Wake Forest': 'wake',
-      'California': 'cal', 'Stanford': 'stan', 'SMU': 'smu',
-      'Illinois': 'ill', 'Indiana': 'ind', 'Iowa': 'iowa',
-      'Maryland': 'md', 'Michigan': 'mich', 'Michigan State': 'msu',
-      'Minnesota': 'minn', 'Nebraska': 'neb', 'Northwestern': 'nw',
-      'Ohio State': 'osu', 'Penn State': 'psu', 'Purdue': 'pur',
-      'Rutgers': 'rut', 'Wisconsin': 'wisc', 'Oregon': 'ore',
-      'UCLA': 'ucla', 'USC': 'usc', 'Washington': 'wash',
-      'Baylor': 'bay', 'BYU': 'byu', 'Cincinnati': 'cin',
-      'Houston': 'hou', 'Iowa State': 'isu', 'Kansas': 'ku',
-      'Kansas State': 'ksu', 'Oklahoma State': 'okst', 'TCU': 'tcu',
-      'Texas Tech': 'tt', 'UCF': 'ucf', 'West Virginia': 'wvu',
-      'Arizona': 'ariz', 'Arizona State': 'asu', 'Colorado': 'col',
-      'Utah': 'utah',
-      'Alabama': 'bama', 'Arkansas': 'ark', 'Auburn': 'aub',
-      'Florida': 'fla', 'Georgia': 'uga', 'Kentucky': 'uk',
-      'LSU': 'lsu', 'Ole Miss': 'miss', 'Mississippi State': 'msst',
-      'Missouri': 'mizz', 'South Carolina': 'sc', 'Tennessee': 'tenn',
-      'Texas A&M': 'tam', 'Vanderbilt': 'vandy', 'Oklahoma': 'okla',
-      'Texas': 'tex',
-      'Notre Dame': 'nd',
-    };
-    
     if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
-    if (sport === 'ncaaf' || sport === 'cfb') return cfbTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
-    
-    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
+    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
   };
 
   const fetchGames = async () => {
     setLoading(true);
     setError("");
     setGames([]);
-    setBackendFetchStatus('idle');
-    setInjuryApiStatus({ available: null, sources: {} });
 
     try {
       if (!parsedDataset || !parsedDataset.games) {
@@ -950,37 +698,12 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         return;
       }
 
-      if (selectedSport === "americanfootball_nfl") {
-        await fetchNfeloData();
-      }
-
-      let gamesWithIds = [];
-
-      if (apiKey.trim()) {
-        try {
-          const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
-          const response = await fetch(url);
-
-          if (response.ok) {
-            const oddsData = await response.json();
-            if (oddsData && oddsData.length > 0) {
-              gamesWithIds = oddsData.map((game, index) => ({
-                ...game,
-                id: game.id || `${game.sport_key}_${index}`
-              }));
-            }
-          }
-        } catch (apiError) {
-          console.warn("Odds API unavailable:", apiError);
-        }
-      }
-
-      const datasetGames = parsedDataset.games.map((game, index) => {
+      let gamesWithIds = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
         if (game.team_data) {
-          homeTeam = game.home_team || game.team_data.home?.school || 'Unknown Home';
-          awayTeam = game.away_team || game.team_data.away?.school || 'Unknown Away';
+          homeTeam = game.home_team || 'Unknown Home';
+          awayTeam = game.away_team || 'Unknown Away';
           gameTime = game.date || new Date().toISOString();
         } else {
           homeTeam = game.teams?.home || game.home_team || 'Unknown Home';
@@ -1000,62 +723,14 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         };
       });
 
-      if (gamesWithIds.length > 0) {
-        gamesWithIds = gamesWithIds.map(oddsGame => {
-          const matchingDatasetGame = datasetGames.find(dg => {
-            if (!dg.home_team || !dg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
-              return false;
-            }
-            
-            const normalizeTeam = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
-            const dgHome = normalizeTeam(dg.home_team);
-            const dgAway = normalizeTeam(dg.away_team);
-            const oddsHome = normalizeTeam(oddsGame.home_team);
-            const oddsAway = normalizeTeam(oddsGame.away_team);
-            
-            return (dgHome.includes(oddsHome) || oddsHome.includes(dgHome)) &&
-                   (dgAway.includes(oddsAway) || oddsAway.includes(dgAway));
-          });
-          
-          if (matchingDatasetGame) {
-            return {
-              ...oddsGame,
-              datasetGame: matchingDatasetGame.datasetGame
-            };
-          }
-          return oddsGame;
-        });
-      } else {
-        gamesWithIds = datasetGames;
-      }
-
-      if (gamesWithIds.length === 0) {
-        setError("No games found in dataset.");
-        return;
-      }
-
-      console.log(`Loaded ${gamesWithIds.length} games from dataset`);
-      
-      console.log('Attempting to supplement games with backend data...');
-      gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
-      
       setGames(gamesWithIds);
 
-      console.log('=== FETCHING INJURY DATA (API-Sports + ESPN) ===');
       for (const game of gamesWithIds) {
-        const hasValidTeams = game.home_team && 
-                             game.away_team && 
+        const hasValidTeams = game.home_team && game.away_team && 
                              typeof game.home_team === 'string' && 
-                             typeof game.away_team === 'string' &&
-                             game.home_team !== 'Unknown Home' &&
-                             game.away_team !== 'Unknown Away';
+                             typeof game.away_team === 'string';
         
-        if (!hasValidTeams) {
-          console.warn('Skipping injury fetch for game with invalid teams:', game.home_team, game.away_team);
-          continue;
-        }
-        
-        console.log('Fetching injuries for:', game.away_team, '@', game.home_team);
+        if (!hasValidTeams) continue;
         
         Promise.all([
           fetchESPNData(game.home_team, selectedSport),
@@ -1063,23 +738,8 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         ]).then(([homeData, awayData]) => {
           setEspnDataCache(prev => ({
             ...prev,
-            [game.id]: { 
-              home: homeData, 
-              away: awayData, 
-              fetchedAt: new Date().toISOString(),
-              status: (homeData?.injuries?.length > 0 || awayData?.injuries?.length > 0) ? 'success' : 'limited',
-              source: homeData?.source || 'unknown'
-            }
+            [game.id]: { home: homeData, away: awayData, fetchedAt: new Date().toISOString() }
           }));
-          
-          console.log(`Injuries loaded for ${game.home_team}: ${homeData.injuries.length} (${homeData.source}), ${game.away_team}: ${awayData.injuries.length} (${awayData.source})`);
-          
-          // Update overall injury API status
-          if (homeData?.source === 'api-sports' || awayData?.source === 'api-sports') {
-            setInjuryApiStatus(prev => ({ ...prev, available: true }));
-          }
-        }).catch(err => {
-          console.log('Injury fetch error for game:', err);
         });
       }
 
@@ -1095,96 +755,55 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
     try {
       const gameData = game.datasetGame;
-      
-      if (!gameData) {
-        throw new Error("No dataset found for this game");
-      }
+      if (!gameData) throw new Error("No dataset found for this game");
 
       const advancedFeatures = calculateAdvancedFeatures(gameData);
       const isCFB = advancedFeatures?.sport === 'CFB';
       const espnData = espnDataCache[game.id];
-      const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : { home: 0, away: 0, total: 0 };
+      const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0 };
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(gameData, advancedFeatures, injuryImpact) : null;
       const marketAnalysis = statPrediction ? findMarketValue(game, statPrediction) : null;
-      const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
-      const ensemblePrediction = statPrediction && !isCFB ? 
-        calculateEnsemblePrediction(statPrediction, nfeloPrediction, marketAnalysis?.marketSpread) : null;
+      const ensemblePrediction = statPrediction ? 
+        calculateEnsemblePrediction(statPrediction, null, marketAnalysis?.marketSpread) : null;
 
-      let prompt = `Provide comprehensive analysis for ${game.away_team} @ ${game.home_team}\n\n`;
-      
-      if (game.hasBackendData) {
-        prompt += `**DATA ENHANCED: Backend APIs supplemented the JSON dataset with additional metrics**\n\n`;
-      }
-      
-      if (isCFB) {
-        prompt += `**SPORT: COLLEGE FOOTBALL**\n\n`;
-      } else {
-        prompt += `**SPORT: NFL**\n\n`;
-      }
+      let prompt = `Analyze: ${game.away_team} @ ${game.home_team}\n\n`;
+      prompt += `**SPORT: ${isCFB ? 'COLLEGE FOOTBALL' : 'NFL'}**\n\n`;
 
       if (statPrediction && marketAnalysis) {
-        prompt += `**MODEL PROJECTIONS:**\n`;
-        prompt += `Projected Spread: ${game.home_team} ${statPrediction.projectedSpread > 0 ? '-' : '+'}${Math.abs(statPrediction.projectedSpread)}\n`;
-        prompt += `Projected Total: ${statPrediction.projectedTotal?.toFixed(1) || 'N/A'}\n`;
-        prompt += `Projected Scores: ${game.home_team} ${statPrediction.homeScore?.toFixed(1)}, ${game.away_team} ${statPrediction.awayScore?.toFixed(1)}\n`;
+        prompt += `**STATISTICAL MODEL PROJECTION:**\n`;
+        prompt += `Spread: ${game.home_team} ${statPrediction.projectedSpread > 0 ? '-' : '+'}${Math.abs(statPrediction.projectedSpread)}\n`;
+        prompt += `Total: ${statPrediction.projectedTotal?.toFixed(1)}\n`;
+        prompt += `Confidence: ${statPrediction.confidence}/5 stars\n\n`;
+        
+        if (statPrediction.components) {
+          prompt += `**CALCULATION COMPONENTS:**\n`;
+          Object.entries(statPrediction.components).forEach(([key, value]) => {
+            prompt += `${key}: ${value >= 0 ? '+' : ''}${value.toFixed(2)} pts\n`;
+          });
+          prompt += `\n`;
+        }
+
         if (marketAnalysis.marketSpread) {
-          prompt += `Market Spread: ${game.home_team} ${marketAnalysis.marketSpread}\n`;
-          prompt += `Spread Edge: ${marketAnalysis.spreadDifferential.toFixed(1)} points\n`;
+          prompt += `Market: ${game.home_team} ${marketAnalysis.marketSpread}\n`;
+          prompt += `Model Edge: ${(statPrediction.projectedSpread - marketAnalysis.marketSpread).toFixed(1)} points\n\n`;
         }
-        prompt += `\n`;
-      }
-      
-      if (nfeloPrediction) {
-        prompt += `**NFELO PREDICTIONS (NFL Elo Model):**\n`;
-        prompt += `Elo Ratings: ${game.home_team} ${nfeloPrediction.home_elo || nfeloPrediction.home_rating}, ${game.away_team} ${nfeloPrediction.away_elo || nfeloPrediction.away_rating}\n`;
-        if (nfeloPrediction.predicted_spread !== undefined) {
-          prompt += `nfelo Spread: ${game.home_team} ${nfeloPrediction.predicted_spread > 0 ? '-' : '+'}${Math.abs(nfeloPrediction.predicted_spread)}\n`;
-        }
-        if (nfeloPrediction.home_win_prob !== undefined) {
-          prompt += `Win Probability: ${game.home_team} ${(nfeloPrediction.home_win_prob * 100).toFixed(1)}%, ${game.away_team} ${((1 - nfeloPrediction.home_win_prob) * 100).toFixed(1)}%\n`;
-        }
-        prompt += `\n`;
       }
 
       if (ensemblePrediction) {
-        prompt += `**ENSEMBLE MODEL:**\n`;
-        prompt += `Weighted Ensemble Spread: ${game.home_team} ${ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}${Math.abs(ensemblePrediction.ensembleSpread)}\n`;
-        prompt += `Consensus Confidence: ${ensemblePrediction.consensusConfidence}/5 stars\n\n`;
+        prompt += `**ENSEMBLE PROJECTION:**\n`;
+        prompt += `Weighted Spread: ${game.home_team} ${ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}${Math.abs(ensemblePrediction.ensembleSpread)}\n`;
+        prompt += `Confidence: ${ensemblePrediction.consensusConfidence}/5 (${ensemblePrediction.hasConsensus ? 'Consensus' : ensemblePrediction.hasDisagreement ? 'Disagreement' : 'Mixed'})\n\n`;
       }
 
-      if (espnData && (espnData.home?.injuries?.length > 0 || espnData.away?.injuries?.length > 0)) {
-        prompt += `**INJURY IMPACT ANALYSIS:**\n`;
-        prompt += `Total Impact: ${game.home_team} -${injuryImpact.home.toFixed(1)} pts, ${game.away_team} -${injuryImpact.away.toFixed(1)} pts\n`;
-        prompt += `Net Differential: ${Math.abs(injuryImpact.differential).toFixed(1)} pts favoring ${injuryImpact.differential > 0 ? game.away_team : game.home_team}\n\n`;
-        
-        prompt += `${game.home_team} Injuries:\n`;
-        espnData.home?.injuries?.forEach((inj, i) => {
-          prompt += `${i + 1}. ${inj.headline}\n`;
-        });
-        prompt += `\n${game.away_team} Injuries:\n`;
-        espnData.away?.injuries?.forEach((inj, i) => {
-          prompt += `${i + 1}. ${inj.headline}\n`;
-        });
-        prompt += `\n`;
+      if (injuryImpact.total > 0) {
+        prompt += `**INJURY IMPACT:**\n`;
+        prompt += `${game.home_team}: -${injuryImpact.home.toFixed(1)} pts (${espnData?.home?.injuries?.length || 0} injuries)\n`;
+        prompt += `${game.away_team}: -${injuryImpact.away.toFixed(1)} pts (${espnData?.away?.injuries?.length || 0} injuries)\n`;
+        prompt += `Net Edge: ${Math.abs(injuryImpact.differential).toFixed(1)} pts favoring ${injuryImpact.differential > 0 ? game.away_team : game.home_team}\n\n`;
       }
 
       prompt += `**COMPLETE DATASET:**\n${JSON.stringify(gameData, null, 2)}\n\n`;
-
-      if (game.bookmakers?.length > 0) {
-        prompt += `**MARKET ODDS:**\n`;
-        game.bookmakers.slice(0, 2).forEach(book => {
-          prompt += `${book.title}:\n`;
-          book.markets?.forEach(market => {
-            prompt += `  ${market.key}: `;
-            market.outcomes?.forEach(outcome => {
-              prompt += `${outcome.name} ${outcome.point || ''} ${outcome.price} | `;
-            });
-            prompt += `\n`;
-          });
-        });
-      }
-
-      prompt += `\nUse the ${isCFB ? 'CFB' : 'NFL'} methodologies from system prompt. Show calculations.`;
+      prompt += `Use ${isCFB ? 'CFB' : 'NFL'} methodology. Show all calculations. Verify defensive success rate signs are correct.`;
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -1212,10 +831,21 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           text: analysis, 
           marketAnalysis, 
           statPrediction,
-          nfeloPrediction,
           ensemblePrediction
         }
       }));
+
+      if (statPrediction && marketAnalysis?.marketSpread) {
+        setPredictionTracking(prev => [...prev, {
+          gameId: game.id,
+          teams: `${game.away_team} @ ${game.home_team}`,
+          modelSpread: statPrediction.projectedSpread,
+          marketSpread: marketAnalysis.marketSpread,
+          confidence: statPrediction.confidence,
+          timestamp: new Date().toISOString()
+        }]);
+      }
+
     } catch (err) {
       setAnalyses(prev => ({ ...prev, [game.id]: { loading: false, text: `Error: ${err.message}` } }));
     }
@@ -1237,9 +867,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
               <li>Educational and fantasy football purposes only</li>
             </ul>
             <div style={{ backgroundColor: "#ff6b6b", padding: "15px", borderRadius: "8px", marginBottom: "15px" }}>
-              <p style={{ margin: 0, fontWeight: "600" }}>
-                Call 1-800-GAMBLER if you have a problem
-              </p>
+              <p style={{ margin: 0, fontWeight: "600" }}>Call 1-800-GAMBLER if you have a problem</p>
             </div>
           </div>
           <button
@@ -1255,85 +883,38 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
-      <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Analytics & Fantasy System</h1>
+      <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.0</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          JSON Dataset + API-Sports/ESPN Injuries + nfelo Integration
+          Fixed Formulas • Ensemble Modeling • Advanced Metrics • Performance Tracking
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
           <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>1. Load Your Dataset</h2>
-          
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
-            placeholder='Paste your JSON dataset here (must have a "games" array with team names)...'
+            placeholder='Paste CFB or NFL JSON dataset...'
             style={{ width: "100%", minHeight: "150px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px", borderRadius: "4px", border: "1px solid #ddd" }}
           />
-          
           <button 
             onClick={parseDataset} 
             style={{ padding: "8px 16px", backgroundColor: "#10b981", color: "white", border: "none", borderRadius: "4px", marginRight: "10px", cursor: "pointer", fontWeight: "600" }}
           >
             Load Dataset
           </button>
-          
           {datasetLoaded && (
             <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>
-              ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games found
+              ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games
             </span>
           )}
-
-          {backendFetchStatus === 'fetching' && (
-            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#e8f4f8", borderRadius: "4px", fontSize: "12px", color: "#004085" }}>
-              Fetching supplemental data from backend APIs...
-            </div>
-          )}
-          
-          {backendFetchStatus === 'success' && (
-            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "12px", color: "#155724" }}>
-              ✓ Backend data successfully merged with JSON dataset
-            </div>
-          )}
-          
-          {backendFetchStatus === 'partial' && (
-            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "12px", color: "#856404" }}>
-              ⚠ Partial backend data available - some games supplemented
-            </div>
-          )}
-          
-          {backendFetchStatus === 'unavailable' && (
-            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f8d7da", borderRadius: "4px", fontSize: "12px", color: "#721c24" }}>
-              ✗ Backend APIs unavailable - using JSON data only
-            </div>
-          )}
-
-          <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#e8f4f8", borderRadius: "6px", fontSize: "12px", color: "#004085" }}>
-            <strong>How it works:</strong> System tries API-Sports first (100 req/day), then falls back to ESPN if needed. Both provide injury data automatically.
-          </div>
         </div>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
-          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Optional: Market Odds</h2>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px" }}>
+          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Configure & Analyze</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "15px" }}>
             <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
-                The Odds API Key (optional - for live betting lines)
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="API Key"
-                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
-              />
-            </div>
-            
-            <div>
-              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
-                Sport
-              </label>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
               <select 
                 value={selectedSport} 
                 onChange={(e) => setSelectedSport(e.target.value)} 
@@ -1349,45 +930,16 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             disabled={loading || !datasetLoaded} 
             style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || !datasetLoaded) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: (loading || !datasetLoaded) ? "not-allowed" : "pointer" }}
           >
-            {loading ? "Loading..." : "Load Games & Fetch Data"}
+            {loading ? "Loading..." : "Initialize Games"}
           </button>
-
-          {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
-            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px", border: "1px solid #c3e6cb" }}>
-              <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724" }}>
-                ✓ nfelo NFL Model Active - Elo ratings and predictions enabled
-              </div>
-            </div>
-          )}
-
-          {injuryApiStatus.available !== null && (
-            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: injuryApiStatus.available ? "#d4edda" : "#fff3cd", borderRadius: "6px", border: `1px solid ${injuryApiStatus.available ? "#c3e6cb" : "#ffeaa7"}` }}>
-              <div style={{ fontSize: "14px", fontWeight: "600", color: injuryApiStatus.available ? "#155724" : "#856404" }}>
-                {injuryApiStatus.available ? 
-                  "✓ API-Sports Active - Using official injury data" : 
-                  "⚠ API-Sports Unavailable - Using ESPN fallback"}
-              </div>
-            </div>
-          )}
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
-
-        {games.length > 0 && (
-          <div style={{ backgroundColor: "#e8f4f8", padding: "15px", borderRadius: "8px", marginBottom: "20px", border: "1px solid #b8daff" }}>
-            <div style={{ fontSize: "14px", fontWeight: "600", color: "#004085" }}>
-              ✓ {games.length} game{games.length !== 1 ? 's' : ''} ready for analysis
-            </div>
-          </div>
-        )}
 
         {games.map(game => {
           const analysis = analyses[game.id];
           const advancedFeatures = game.datasetGame ? calculateAdvancedFeatures(game.datasetGame) : null;
           const isCFB = advancedFeatures?.sport === 'CFB';
-          const espnData = espnDataCache[game.id];
-          const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
-          const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -1399,120 +951,26 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                       {new Date(game.commence_time).toLocaleString()}
                     </div>
                     
-                    <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      {game.hasBackendData && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: "#e0e7ff",
-                          color: "#3730a3",
-                          fontWeight: "600"
-                        }}>
-                          Backend Enhanced
+                    {advancedFeatures && (
+                      <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: isCFB ? "#d1ecf1" : "#d4edda", color: isCFB ? "#0c5460" : "#155724", fontWeight: "600" }}>
+                          {isCFB ? 'CFB SP+ Model' : 'NFL EPA Model'}
                         </span>
-                      )}
-                      {advancedFeatures && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: advancedFeatures.sport === 'CFB' ? "#d1ecf1" : "#d4edda",
-                          color: advancedFeatures.sport === 'CFB' ? "#0c5460" : "#155724",
-                          fontWeight: "600"
-                        }}>
-                          {advancedFeatures.sport === 'CFB' ? '✓ CFB SP+' : '✓ NFL EPA'}
-                        </span>
-                      )}
-                      {nfeloPrediction && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: "#e8f4f8",
-                          color: "#0066cc",
-                          fontWeight: "600"
-                        }}>
-                          ⭐ nfelo Model
-                        </span>
-                      )}
-                      {espnData && espnData.source && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: espnData.source === 'api-sports' ? "#d4edda" : "#fff3cd",
-                          color: espnData.source === 'api-sports' ? "#155724" : "#856404",
-                          fontWeight: "600"
-                        }}>
-                          {espnData.source === 'api-sports' ? '✓ API-Sports' : 
-                           espnData.source === 'espn' ? '✓ ESPN' : '⚠ Limited'}
-                        </span>
-                      )}
-                      {injuryImpact && injuryImpact.total > 0 && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: injuryImpact.total > 4 ? "#f8d7da" : "#fff3cd",
-                          color: injuryImpact.total > 4 ? "#721c24" : "#856404",
-                          fontWeight: "600"
-                        }}>
-                          {injuryImpact.total.toFixed(1)}pts impact
-                          {injuryImpact.differential !== 0 && ` | ${Math.abs(injuryImpact.differential).toFixed(1)}pt edge`}
-                        </span>
-                      )}
-                      {analysis?.ensemblePrediction?.hasConsensus && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: "#d4edda",
-                          color: "#155724",
-                          fontWeight: "600"
-                        }}>
-                          ✓ Model Consensus
-                        </span>
-                      )}
-                    </div>
-                    
-                    {espnData && (espnData.home?.injuries?.length > 0 || espnData.away?.injuries?.length > 0) && (
-                      <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", border: "1px solid #ffeaa7" }}>
-                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
-                          Injury Report {espnData.home?.rateLimit && `(API-Sports: ${espnData.home.rateLimit.remaining}/100)`}
-                        </div>
-                        {espnData.home?.injuries?.length > 0 && (
-                          <div style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
-                            <strong>{game.home_team}:</strong> {espnData.home.injuries.length} injured
-                          </div>
-                        )}
-                        {espnData.away?.injuries?.length > 0 && (
-                          <div style={{ fontSize: "11px", color: "#856404" }}>
-                            <strong>{game.away_team}:</strong> {espnData.away.injuries.length} injured
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {nfeloPrediction && (
-                      <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f8ff", borderRadius: "4px", border: "1px solid #b8daff" }}>
-                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", color: "#004085" }}>
-                          nfelo Elo Ratings & Prediction
-                        </div>
-                        <div style={{ fontSize: "11px", color: "#004085", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                          <span>
-                            {game.home_team}: {nfeloPrediction.home_elo || nfeloPrediction.home_rating}
+                        {analysis?.ensemblePrediction?.hasConsensus && (
+                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#d4edda", color: "#155724", fontWeight: "600" }}>
+                            Model Consensus
                           </span>
-                          <span>
-                            {game.away_team}: {nfeloPrediction.away_elo || nfeloPrediction.away_rating}
+                        )}
+                        {analysis?.ensemblePrediction?.hasDisagreement && (
+                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#fff3cd", color: "#856404", fontWeight: "600" }}>
+                            High Variance
                           </span>
-                          {nfeloPrediction.predicted_spread !== undefined && (
-                            <span style={{ fontWeight: "600" }}>
-                              Spread: {game.home_team} {nfeloPrediction.predicted_spread > 0 ? '-' : '+'}
-                              {Math.abs(nfeloPrediction.predicted_spread)}
-                            </span>
-                          )}
-                        </div>
+                        )}
+                        {analysis?.ensemblePrediction?.modelEdge > 3 && (
+                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#cfe2ff", color: "#084298", fontWeight: "600" }}>
+                            {analysis.ensemblePrediction.modelEdge.toFixed(1)}pt Edge
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1532,21 +990,32 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                     {analysis.text}
                   </div>
                 )}
-
                 {analysis?.loading && (
-                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
-                    <div>Generating analysis...</div>
-                  </div>
+                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating enhanced analysis...</div>
                 )}
               </div>
             </div>
           );
         })}
 
+        {predictionTracking.length > 0 && (
+          <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "white", borderRadius: "8px" }}>
+            <h3 style={{ marginTop: 0 }}>Prediction Tracking ({predictionTracking.length} picks)</h3>
+            <div style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
+              Track these predictions vs actual outcomes to calibrate your model
+            </div>
+            {predictionTracking.slice(-5).map((pred, idx) => (
+              <div key={idx} style={{ padding: "10px", backgroundColor: "#f8f9fa", borderRadius: "4px", marginBottom: "8px", fontSize: "12px" }}>
+                <strong>{pred.teams}</strong> | Model: {pred.modelSpread.toFixed(1)} | Market: {pred.marketSpread.toFixed(1)} | Conf: {pred.confidence}⭐
+              </div>
+            ))}
+          </div>
+        )}
+
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            JSON dataset + API-Sports/ESPN injury proxy + nfelo Elo. Call 1-800-GAMBLER for help.
+            v2.0: Fixed CFB defensive bug • EPA integration • Ensemble modeling • Need 52.4% to break even • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
