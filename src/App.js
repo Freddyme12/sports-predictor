@@ -13,6 +13,10 @@ export default function App() {
   const [espnDataCache, setEspnDataCache] = useState({});
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
+  const [backendDataCache, setBackendDataCache] = useState({});
+  const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
+
+  const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
@@ -305,6 +309,119 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     { key: "icehockey_nhl", title: "NHL" },
   ];
 
+  const fetchBackendDataForTeam = async (teamName, sport, year, week) => {
+    try {
+      let endpoint;
+      let params = `?year=${year}&week=${week}`;
+      
+      if (sport === "americanfootball_nfl") {
+        endpoint = `${BACKEND_URL}/api/nfl-enhanced-data`;
+        params = `?season=${year}&week=${week}`;
+      } else if (sport === "americanfootball_ncaaf") {
+        endpoint = `${BACKEND_URL}/api/cfb-enhanced-data`;
+      } else {
+        return null;
+      }
+      
+      const response = await fetch(endpoint + params);
+      if (!response.ok) {
+        console.warn(`Backend API error: ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      if (data.error || !data.games) {
+        return null;
+      }
+      
+      return data.games;
+    } catch (err) {
+      console.error('Backend fetch error:', err);
+      return null;
+    }
+  };
+
+  const supplementGameDataFromBackend = async (games, sport) => {
+    setBackendFetchStatus('fetching');
+    console.log('=== SUPPLEMENTING DATA FROM BACKEND ===');
+    
+    const currentYear = new Date().getFullYear();
+    const estimatedWeek = 5;
+    
+    try {
+      const backendGames = await fetchBackendDataForTeam(null, sport, currentYear, estimatedWeek);
+      
+      if (!backendGames || backendGames.length === 0) {
+        console.log('No backend data available');
+        setBackendFetchStatus('unavailable');
+        return games;
+      }
+      
+      console.log(`Backend returned ${backendGames.length} games for matching`);
+      
+      const supplementedGames = games.map(jsonGame => {
+        const matchingBackendGame = backendGames.find(bgGame => {
+          if (!bgGame.home_team || !bgGame.away_team) return false;
+          
+          const normalizeTeam = (name) => (name || '').toLowerCase().replace(/[^a-z]/g, '');
+          const jsonHome = normalizeTeam(jsonGame.home_team);
+          const jsonAway = normalizeTeam(jsonGame.away_team);
+          const bgHome = normalizeTeam(bgGame.home_team);
+          const bgAway = normalizeTeam(bgGame.away_team);
+          
+          return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
+                 (jsonAway.includes(bgAway) || bgAway.includes(jsonAway));
+        });
+        
+        if (matchingBackendGame) {
+          console.log(`✓ Backend data found for: ${jsonGame.away_team} @ ${jsonGame.home_team}`);
+          
+          const mergedGameData = { ...jsonGame.datasetGame };
+          
+          if (matchingBackendGame.team_data) {
+            mergedGameData.team_data = {
+              home: { ...(mergedGameData.team_data?.home || {}), ...matchingBackendGame.team_data.home },
+              away: { ...(mergedGameData.team_data?.away || {}), ...matchingBackendGame.team_data.away }
+            };
+          }
+          
+          if (matchingBackendGame.epa_stats) {
+            mergedGameData.epa_stats = { ...(mergedGameData.epa_stats || {}), ...matchingBackendGame.epa_stats };
+          }
+          if (matchingBackendGame.player_statistics) {
+            mergedGameData.player_statistics = { ...(mergedGameData.player_statistics || {}), ...matchingBackendGame.player_statistics };
+          }
+          if (matchingBackendGame.team_statistics) {
+            mergedGameData.team_statistics = { ...(mergedGameData.team_statistics || {}), ...matchingBackendGame.team_statistics };
+          }
+          
+          setBackendDataCache(prev => ({
+            ...prev,
+            [jsonGame.id]: { merged: true, source: 'backend' }
+          }));
+          
+          return {
+            ...jsonGame,
+            datasetGame: mergedGameData,
+            hasBackendData: true
+          };
+        }
+        
+        return jsonGame;
+      });
+      
+      const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
+      console.log(`Successfully merged backend data for ${mergedCount}/${games.length} games`);
+      setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
+      
+      return supplementedGames;
+    } catch (err) {
+      console.error('Backend supplementing failed:', err);
+      setBackendFetchStatus('error');
+      return games;
+    }
+  };
+
   const fetchNfeloData = async () => {
     if (selectedSport !== "americanfootball_nfl") {
       setNfeloAvailable(false);
@@ -313,7 +430,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     
     try {
       const currentYear = new Date().getFullYear();
-      const currentWeek = 5; // Default week
+      const currentWeek = 5;
       
       const sources = [
         `https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_${currentYear}_week${currentWeek}.json`,
@@ -706,7 +823,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       const sportPath = sportMap[sport] || 'football/nfl';
       const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : sport.replace('americanfootball_', ''));
       
-      // Use ESPN's public API directly (no backend needed)
       const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/teams/${teamAbbr}`;
       const response = await fetch(espnUrl);
 
@@ -806,6 +922,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     setLoading(true);
     setError("");
     setGames([]);
+    setBackendFetchStatus('idle');
 
     try {
       if (!parsedDataset || !parsedDataset.games) {
@@ -820,7 +937,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
       let gamesWithIds = [];
 
-      // First, try to get odds data if API key is provided
       if (apiKey.trim()) {
         try {
           const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
@@ -840,18 +956,14 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         }
       }
 
-      // Load games from JSON dataset
       const datasetGames = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
-        // Try multiple possible field names
         if (game.team_data) {
-          // CFB format
           homeTeam = game.home_team || game.team_data.home?.school || 'Unknown Home';
           awayTeam = game.away_team || game.team_data.away?.school || 'Unknown Away';
           gameTime = game.date || new Date().toISOString();
         } else {
-          // NFL format
           homeTeam = game.teams?.home || game.home_team || 'Unknown Home';
           awayTeam = game.teams?.away || game.away_team || 'Unknown Away';
           gameTime = game.kickoff_local || game.date || new Date().toISOString();
@@ -869,7 +981,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         };
       });
 
-      // Match odds data with dataset games
       if (gamesWithIds.length > 0) {
         gamesWithIds = gamesWithIds.map(oddsGame => {
           const matchingDatasetGame = datasetGames.find(dg => {
@@ -905,9 +1016,12 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       }
 
       console.log(`Loaded ${gamesWithIds.length} games from dataset`);
+      
+      console.log('Attempting to supplement games with backend data...');
+      gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
+      
       setGames(gamesWithIds);
 
-      // Fetch ESPN injury data for all games
       console.log('=== FETCHING ESPN INJURY DATA ===');
       for (const game of gamesWithIds) {
         const hasValidTeams = game.home_team && 
@@ -973,6 +1087,10 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
       let prompt = `Provide comprehensive analysis for ${game.away_team} @ ${game.home_team}\n\n`;
       
+      if (game.hasBackendData) {
+        prompt += `**DATA ENHANCED: Backend APIs supplemented the JSON dataset with additional metrics**\n\n`;
+      }
+      
       if (isCFB) {
         prompt += `**SPORT: COLLEGE FOOTBALL**\n\n`;
       } else {
@@ -1007,6 +1125,22 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         prompt += `**ENSEMBLE MODEL:**\n`;
         prompt += `Weighted Ensemble Spread: ${game.home_team} ${ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}${Math.abs(ensemblePrediction.ensembleSpread)}\n`;
         prompt += `Consensus Confidence: ${ensemblePrediction.consensusConfidence}/5 stars\n\n`;
+      }
+
+      if (espnData && (espnData.home?.injuries?.length > 0 || espnData.away?.injuries?.length > 0)) {
+        prompt += `**INJURY IMPACT ANALYSIS:**\n`;
+        prompt += `Total Impact: ${game.home_team} -${injuryImpact.home.toFixed(1)} pts, ${game.away_team} -${injuryImpact.away.toFixed(1)} pts\n`;
+        prompt += `Net Differential: ${Math.abs(injuryImpact.differential).toFixed(1)} pts favoring ${injuryImpact.differential > 0 ? game.away_team : game.home_team}\n\n`;
+        
+        prompt += `${game.home_team} Injuries:\n`;
+        espnData.home?.injuries?.forEach((inj, i) => {
+          prompt += `${i + 1}. ${inj.headline}\n`;
+        });
+        prompt += `\n${game.away_team} Injuries:\n`;
+        espnData.away?.injuries?.forEach((inj, i) => {
+          prompt += `${i + 1}. ${inj.headline}\n`;
+        });
+        prompt += `\n`;
       }
 
       prompt += `**COMPLETE DATASET:**\n${JSON.stringify(gameData, null, 2)}\n\n`;
@@ -1099,7 +1233,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Analytics & Fantasy System</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          JSON Dataset Analysis with nfelo Elo Integration
+          JSON Dataset with Backend API Supplementation + ESPN Injuries + nfelo Integration
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1108,7 +1242,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
-            placeholder='Paste your JSON dataset here (must have a "games" array)...'
+            placeholder='Paste your JSON dataset here (must have a "games" array with team names)...'
             style={{ width: "100%", minHeight: "150px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px", borderRadius: "4px", border: "1px solid #ddd" }}
           />
           
@@ -1125,9 +1259,34 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             </span>
           )}
 
+          {backendFetchStatus === 'fetching' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#e8f4f8", borderRadius: "4px", fontSize: "12px", color: "#004085" }}>
+              Fetching supplemental data from backend APIs...
+            </div>
+          )}
+          
+          {backendFetchStatus === 'success' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "12px", color: "#155724" }}>
+              ✓ Backend data successfully merged with JSON dataset
+            </div>
+          )}
+          
+          {backendFetchStatus === 'partial' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "12px", color: "#856404" }}>
+              Partial backend data available - some games supplemented
+            </div>
+          )}
+          
+          {backendFetchStatus === 'unavailable' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f8d7da", borderRadius: "4px", fontSize: "12px", color: "#721c24" }}>
+              Backend APIs unavailable - using JSON data only
+            </div>
+          )}
+
           <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#e8f4f8", borderRadius: "6px", fontSize: "12px", color: "#004085" }}>
-            <strong>Required format:</strong> JSON with a "games" array. Each game needs team names and statistics.
-            For CFB: include team_data with SP+ metrics. For NFL: include EPA stats, O-line data, etc.
+            <strong>How it works:</strong> Load your JSON dataset with games and team names. 
+            The system will automatically try to supplement missing data from backend APIs (CFB SP+, NFL EPA, etc.). 
+            Even if backend APIs are unavailable, analysis will proceed using your JSON data.
           </div>
         </div>
 
@@ -1167,7 +1326,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             disabled={loading || !datasetLoaded} 
             style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || !datasetLoaded) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: (loading || !datasetLoaded) ? "not-allowed" : "pointer" }}
           >
-            {loading ? "Loading..." : "Load Games"}
+            {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
 
           {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
@@ -1208,6 +1367,18 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                     </div>
                     
                     <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {game.hasBackendData && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: "#e0e7ff",
+                          color: "#3730a3",
+                          fontWeight: "600"
+                        }}>
+                          Backend Enhanced
+                        </span>
+                      )}
                       {advancedFeatures && (
                         <span style={{ 
                           fontSize: "11px", 
@@ -1341,7 +1512,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            JSON dataset analysis with 2025 methodology + nfelo Elo model. Call 1-800-GAMBLER for help.
+            JSON dataset with backend supplementation, ESPN injuries, and nfelo Elo. Call 1-800-GAMBLER for help.
           </p>
         </div>
       </div>
