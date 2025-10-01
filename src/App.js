@@ -19,7 +19,7 @@ export default function App() {
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
   
-  const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app"; // CHANGE THIS TO YOUR ACTUAL BACKEND URL
+  const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
@@ -643,22 +643,21 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     };
   };
 
-  // FIXED: Added null checks to prevent toLowerCase error
   const findNfeloPrediction = (game) => {
     if (!nfeloData || !nfeloAvailable) return null;
     
-    // ADD NULL CHECK HERE
+    // FIXED: Add null check for team names
     if (!game.home_team || !game.away_team) return null;
     
     const normalizeTeamName = (name) => {
-      // ADD NULL CHECK HERE
+      // FIXED: Add null check in normalizeTeamName
       return (name || '').toLowerCase().replace(/[^a-z]/g, '');
     };
     
     const gameHome = normalizeTeamName(game.home_team);
     const gameAway = normalizeTeamName(game.away_team);
     
-    // ADD CHECK FOR EMPTY STRINGS
+    // FIXED: Add check for empty strings
     if (!gameHome || !gameAway) return null;
     
     const predictions = nfeloData.games || nfeloData.predictions || [];
@@ -852,12 +851,11 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         }
       }
 
-      // FIXED: Added null checks to team matching
       if (backendData && backendData.games) {
         if (gamesWithIds.length > 0) {
           gamesWithIds = gamesWithIds.map(oddsGame => {
             const matchingBackendGame = backendData.games.find(bg => {
-              // ADD NULL CHECKS HERE
+              // FIXED: Add null checks for team names
               if (!bg.home_team || !bg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
                 return false;
               }
@@ -915,12 +913,17 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
         if (gamesWithIds.length > 0) {
           gamesWithIds = gamesWithIds.map(oddsGame => {
-            const matchingManualGame = manualGames.find(mg =>
-              (mg.home_team.toLowerCase().includes(oddsGame.home_team.toLowerCase()) ||
-               oddsGame.home_team.toLowerCase().includes(mg.home_team.toLowerCase())) &&
-              (mg.away_team.toLowerCase().includes(oddsGame.away_team.toLowerCase()) ||
-               oddsGame.away_team.toLowerCase().includes(mg.away_team.toLowerCase()))
-            );
+            const matchingManualGame = manualGames.find(mg => {
+              // FIXED: Add null checks for manual game matching
+              if (!mg.home_team || !mg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
+                return false;
+              }
+              
+              return (mg.home_team.toLowerCase().includes(oddsGame.home_team.toLowerCase()) ||
+                     oddsGame.home_team.toLowerCase().includes(mg.home_team.toLowerCase())) &&
+                    (mg.away_team.toLowerCase().includes(oddsGame.away_team.toLowerCase()) ||
+                     oddsGame.away_team.toLowerCase().includes(mg.away_team.toLowerCase()));
+            });
             
             if (matchingManualGame) {
               return {
