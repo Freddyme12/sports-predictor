@@ -44,6 +44,28 @@ Before finalizing any spread, verify all components have correct signs:
 **CFB Indicators:** SP+, success_rate, explosiveness, havoc_rate
 **NFL Indicators:** EPA, offensive_line_unit, player_statistics, PFF grades
 
+## NFELO INTEGRATION (NFL ONLY)
+
+When nfelo predictions are available, incorporate them into your analysis:
+
+**nfelo Model Overview:**
+- Elo-based rating system specifically tuned for NFL
+- Accounts for QB adjustments, rest days, weather, home field
+- Provides win probabilities and expected value vs market lines
+- Open-source model validated against historical performance
+
+**How to Use nfelo Data:**
+1. **Power Ratings Context**: nfelo Elo scores indicate true team strength (1500 = average)
+2. **Momentum Capture**: Recent form reflected in Elo changes
+3. **Market Comparison**: Compare nfelo spread vs your model vs market
+4. **Expected Value**: nfelo flags +EV opportunities when model disagrees with market
+5. **Ensemble Weighting**: Weight predictions as: Your Model (50%), nfelo (25%), Market (25%)
+
+**When nfelo Differs Significantly:**
+- If nfelo spread differs by 3+ points from your model, investigate why
+- Common reasons: QB injury impact, recent performance trends, scheduling factors
+- Use nfelo's QB-specific adjustments to validate your injury calculations
+
 ## COLLEGE FOOTBALL (CFB) PROJECTION - CORRECTED
 
 ### CFB Spread Calculation (VERIFIED FORMULAS)
@@ -77,11 +99,6 @@ Before finalizing any spread, verify all components have correct signs:
 2. Sum all components
 3. Verify final spread makes intuitive sense
 4. If Home SP+ is better but spread favors away, re-check calculations
-
-### CFB Third Down & Situational Analysis
-- Analyze third down conversion rates from game_results
-- Red zone efficiency (if available in scoring data)
-- Tempo adjustments based on offensive pace
 
 ### CFB Total Projection
 Base = [(Home PPG + Away PPG) / 2] × 2
@@ -129,10 +146,6 @@ Base = Team EPA indicators + pace
 - Combined plays >130 = 1.08x
 - Average 122-130 = 1.00x  
 - Slow <122 = 0.93x
-**Adjustments:**
-- Each 0.1 EPA = ±2.8 points
-- Red zone TD rates impact scoring ceiling
-- Third down efficiency affects drive sustainability
 
 ## ADVANCED INJURY MODELING
 
@@ -206,42 +219,13 @@ Base confidence from model strength, then adjust:
 Present home vs away for all major metrics
 
 ### CALCULATION BREAKDOWN
-Show each formula component:
-1. SP+/EPA component: [calculation] = +/-X.X points
-2. Success rate component: [calculation] = +/-X.X points
-3. [Continue for all factors]
-4. **VERIFY SIGNS:** Check each component makes intuitive sense
-5. Sum with home field = Final Spread
-
-### SITUATIONAL FACTORS
-- Recent form (last 3 games with scores)
-- Third down efficiency gap
-- Red zone performance
-- Pace of play impact
-- Key player availability
-
-### INJURY IMPACT ANALYSIS
-If injuries present:
-- Quantified impact per player
-- Cluster/bulk penalties
-- Net differential
-- Confidence adjustment
+Show each formula component with explicit values and signs
 
 ### BETTING RECOMMENDATIONS
 **Primary Pick:** [Side/Total] ⭐⭐⭐⭐
-- Model edge: X.X points vs market
-- Ensemble agreement: [consensus/split]
-- Expected value: [if calculable]
-
-**Risk Factors:**
-- List specific concerns
-- Model disagreements
-- Volatility indicators
-
-**Performance Tracking:**
-- Track your predictions vs outcomes
-- Calculate actual win rate by confidence level
-- Monitor CLV (closing line value)
+- Model edge vs market
+- Ensemble agreement
+- Expected value
 
 ## CRITICAL RULES
 
@@ -249,18 +233,9 @@ If injuries present:
 2. **Check signs before finalizing:** Each component should make logical sense
 3. **Show all calculations explicitly**
 4. **Use ensemble weighting when multiple models available**
-5. **Calibrate confidence based on data quality and model agreement**
-6. **Be realistic:** 54-56% accuracy is excellent, not 70%+
-7. **Account for regression:** Recent outlier performances may not repeat
-8. **Third down and red zone efficiency are predictive**
-9. **Most non-QB injuries have minimal line impact**
-10. **Market line contains information - respect it**
+5. **Be realistic:** 54-56% accuracy is excellent, not 70%+
 
-## RESPONSE FORMAT
-
-Use clear headers, bullet points for readability. Bold key numbers. Create comparison tables for metrics. Show calculation work. Be concise but comprehensive.
-
-**Remember:** Need 52.4% to break even at -110. Educational purposes only. Most bettors lose long-term.`;
+Educational purposes only. Need 52.4% to break even at -110.`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -269,6 +244,168 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
     { key: "baseball_mlb", title: "MLB" },
     { key: "icehockey_nhl", title: "NHL" },
   ];
+
+  const fetchBackendDataForTeam = async (teamName, sport, year, week) => {
+    try {
+      let endpoint;
+      let params = `?year=${year}&week=${week}`;
+      
+      if (sport === "americanfootball_nfl") {
+        endpoint = `${BACKEND_URL}/api/nfl-enhanced-data`;
+        params = `?season=${year}&week=${week}`;
+      } else if (sport === "americanfootball_ncaaf") {
+        endpoint = `${BACKEND_URL}/api/cfb-enhanced-data`;
+      } else {
+        return null;
+      }
+      
+      const response = await fetch(endpoint + params);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      if (data.error || !data.games) return null;
+      
+      return data.games;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  const supplementGameDataFromBackend = async (games, sport) => {
+    setBackendFetchStatus('fetching');
+    
+    const currentYear = new Date().getFullYear();
+    const estimatedWeek = 5;
+    
+    try {
+      const backendGames = await fetchBackendDataForTeam(null, sport, currentYear, estimatedWeek);
+      
+      if (!backendGames || backendGames.length === 0) {
+        setBackendFetchStatus('unavailable');
+        return games;
+      }
+      
+      const supplementedGames = games.map(jsonGame => {
+        const matchingBackendGame = backendGames.find(bgGame => {
+          if (!bgGame.home_team || !bgGame.away_team) return false;
+          
+          const normalizeTeam = (name) => (name || '').toLowerCase().replace(/[^a-z]/g, '');
+          const jsonHome = normalizeTeam(jsonGame.home_team);
+          const jsonAway = normalizeTeam(jsonGame.away_team);
+          const bgHome = normalizeTeam(bgGame.home_team);
+          const bgAway = normalizeTeam(bgGame.away_team);
+          
+          return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
+                 (jsonAway.includes(bgAway) || bgAway.includes(jsonAway));
+        });
+        
+        if (matchingBackendGame) {
+          const mergedGameData = { ...jsonGame.datasetGame };
+          
+          if (matchingBackendGame.team_data) {
+            mergedGameData.team_data = {
+              home: { ...(mergedGameData.team_data?.home || {}), ...matchingBackendGame.team_data.home },
+              away: { ...(mergedGameData.team_data?.away || {}), ...matchingBackendGame.team_data.away }
+            };
+          }
+          
+          if (matchingBackendGame.epa_stats) {
+            mergedGameData.epa_stats = { ...(mergedGameData.epa_stats || {}), ...matchingBackendGame.epa_stats };
+          }
+          if (matchingBackendGame.player_statistics) {
+            mergedGameData.player_statistics = { ...(mergedGameData.player_statistics || {}), ...matchingBackendGame.player_statistics };
+          }
+          if (matchingBackendGame.team_statistics) {
+            mergedGameData.team_statistics = { ...(mergedGameData.team_statistics || {}), ...matchingBackendGame.team_statistics };
+          }
+          
+          setBackendDataCache(prev => ({
+            ...prev,
+            [jsonGame.id]: { merged: true, source: 'backend' }
+          }));
+          
+          return {
+            ...jsonGame,
+            datasetGame: mergedGameData,
+            hasBackendData: true
+          };
+        }
+        
+        return jsonGame;
+      });
+      
+      const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
+      setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
+      
+      return supplementedGames;
+    } catch (err) {
+      setBackendFetchStatus('error');
+      return games;
+    }
+  };
+
+  const fetchNfeloData = async () => {
+    if (selectedSport !== "americanfootball_nfl") {
+      setNfeloAvailable(false);
+      return null;
+    }
+    
+    try {
+      const currentYear = new Date().getFullYear();
+      const currentWeek = 5;
+      
+      const sources = [
+        `https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_${currentYear}_week${currentWeek}.json`,
+        `https://www.nfeloapp.com/api/predictions?week=${currentWeek}&season=${currentYear}`
+      ];
+      
+      for (const source of sources) {
+        try {
+          const response = await fetch(source);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && (data.games || data.predictions)) {
+              setNfeloData(data);
+              setNfeloAvailable(true);
+              return data;
+            }
+          }
+        } catch (err) {
+          continue;
+        }
+      }
+      
+      setNfeloAvailable(false);
+      return null;
+    } catch (err) {
+      setNfeloAvailable(false);
+      return null;
+    }
+  };
+
+  const findNfeloPrediction = (game) => {
+    if (!nfeloData || !nfeloAvailable) return null;
+    if (!game.home_team || !game.away_team) return null;
+    
+    const normalizeTeamName = (name) => {
+      return (name || '').toLowerCase().replace(/[^a-z]/g, '');
+    };
+    
+    const gameHome = normalizeTeamName(game.home_team);
+    const gameAway = normalizeTeamName(game.away_team);
+    
+    if (!gameHome || !gameAway) return null;
+    
+    const predictions = nfeloData.games || nfeloData.predictions || [];
+    
+    return predictions.find(pred => {
+      const predHome = normalizeTeamName(pred.home_team || pred.home || '');
+      const predAway = normalizeTeamName(pred.away_team || pred.away || '');
+      
+      return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
+             (gameAway.includes(predAway) || predAway.includes(gameAway));
+    });
+  };
 
   const calculateAdvancedFeatures = (gameData) => {
     if (!gameData) return null;
@@ -629,10 +766,13 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
     try {
       const sportMap = { 
         'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football'
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
       };
       const sportPath = sportMap[sport] || 'football/nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
+      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : sport.replace('americanfootball_', ''));
       
       const proxyUrl = `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamAbbr)}`;
       
@@ -648,12 +788,21 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         return { team: teamName, injuries: [], lastUpdated: new Date().toISOString(), source: data.source || 'failed' };
       }
       
+      setInjuryApiStatus(prev => ({
+        ...prev,
+        sources: {
+          ...prev.sources,
+          [teamName]: { source: data.source, fallbackUsed: data.fallbackUsed, count: data.count || 0 }
+        }
+      }));
+      
       return { 
         team: teamName, 
         injuries: data.injuries || [],
         lastUpdated: data.lastUpdated || new Date().toISOString(),
         source: data.source || 'unknown',
-        fallbackUsed: data.fallbackUsed || false
+        fallbackUsed: data.fallbackUsed || false,
+        rateLimit: data.rateLimit
       };
     } catch (error) {
       return { 
@@ -682,14 +831,46 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
       'Tennessee Titans': 'ten', 'Washington Commanders': 'wsh'
     };
 
+    const cfbTeams = {
+      'Boston College': 'bc', 'Clemson': 'clem', 'Duke': 'duke',
+      'Florida State': 'fsu', 'Georgia Tech': 'gt',
+      'Louisville': 'lou', 'Miami': 'miami', 'NC State': 'ncst',
+      'North Carolina': 'unc', 'Pittsburgh': 'pitt', 'Syracuse': 'cuse',
+      'Virginia': 'uva', 'Virginia Tech': 'vt', 'Wake Forest': 'wake',
+      'California': 'cal', 'Stanford': 'stan', 'SMU': 'smu',
+      'Illinois': 'ill', 'Indiana': 'ind', 'Iowa': 'iowa',
+      'Maryland': 'md', 'Michigan': 'mich', 'Michigan State': 'msu',
+      'Minnesota': 'minn', 'Nebraska': 'neb', 'Northwestern': 'nw',
+      'Ohio State': 'osu', 'Penn State': 'psu', 'Purdue': 'pur',
+      'Rutgers': 'rut', 'Wisconsin': 'wisc', 'Oregon': 'ore',
+      'UCLA': 'ucla', 'USC': 'usc', 'Washington': 'wash',
+      'Baylor': 'bay', 'BYU': 'byu', 'Cincinnati': 'cin',
+      'Houston': 'hou', 'Iowa State': 'isu', 'Kansas': 'ku',
+      'Kansas State': 'ksu', 'Oklahoma State': 'okst', 'TCU': 'tcu',
+      'Texas Tech': 'tt', 'UCF': 'ucf', 'West Virginia': 'wvu',
+      'Arizona': 'ariz', 'Arizona State': 'asu', 'Colorado': 'col',
+      'Utah': 'utah',
+      'Alabama': 'bama', 'Arkansas': 'ark', 'Auburn': 'aub',
+      'Florida': 'fla', 'Georgia': 'uga', 'Kentucky': 'uk',
+      'LSU': 'lsu', 'Ole Miss': 'miss', 'Mississippi State': 'msst',
+      'Missouri': 'mizz', 'South Carolina': 'sc', 'Tennessee': 'tenn',
+      'Texas A&M': 'tam', 'Vanderbilt': 'vandy', 'Oklahoma': 'okla',
+      'Texas': 'tex',
+      'Notre Dame': 'nd',
+    };
+    
     if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
-    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
+    if (sport === 'ncaaf' || sport === 'cfb') return cfbTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
+    
+    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
   };
 
   const fetchGames = async () => {
     setLoading(true);
     setError("");
     setGames([]);
+    setBackendFetchStatus('idle');
+    setInjuryApiStatus({ available: null, sources: {} });
 
     try {
       if (!parsedDataset || !parsedDataset.games) {
@@ -698,12 +879,37 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         return;
       }
 
-      let gamesWithIds = parsedDataset.games.map((game, index) => {
+      if (selectedSport === "americanfootball_nfl") {
+        await fetchNfeloData();
+      }
+
+      let gamesWithIds = [];
+
+      if (apiKey.trim()) {
+        try {
+          const url = `https://api.the-odds-api.com/v4/sports/${selectedSport}/odds?apiKey=${apiKey}&regions=us&markets=h2h,spreads,totals&oddsFormat=american`;
+          const response = await fetch(url);
+
+          if (response.ok) {
+            const oddsData = await response.json();
+            if (oddsData && oddsData.length > 0) {
+              gamesWithIds = oddsData.map((game, index) => ({
+                ...game,
+                id: game.id || `${game.sport_key}_${index}`
+              }));
+            }
+          }
+        } catch (apiError) {
+          console.warn("Odds API unavailable:", apiError);
+        }
+      }
+
+      const datasetGames = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
         if (game.team_data) {
-          homeTeam = game.home_team || 'Unknown Home';
-          awayTeam = game.away_team || 'Unknown Away';
+          homeTeam = game.home_team || game.team_data.home?.school || 'Unknown Home';
+          awayTeam = game.away_team || game.team_data.away?.school || 'Unknown Away';
           gameTime = game.date || new Date().toISOString();
         } else {
           homeTeam = game.teams?.home || game.home_team || 'Unknown Home';
@@ -723,12 +929,51 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         };
       });
 
+      if (gamesWithIds.length > 0) {
+        gamesWithIds = gamesWithIds.map(oddsGame => {
+          const matchingDatasetGame = datasetGames.find(dg => {
+            if (!dg.home_team || !dg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
+              return false;
+            }
+            
+            const normalizeTeam = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
+            const dgHome = normalizeTeam(dg.home_team);
+            const dgAway = normalizeTeam(dg.away_team);
+            const oddsHome = normalizeTeam(oddsGame.home_team);
+            const oddsAway = normalizeTeam(oddsGame.away_team);
+            
+            return (dgHome.includes(oddsHome) || oddsHome.includes(dgHome)) &&
+                   (dgAway.includes(oddsAway) || oddsAway.includes(dgAway));
+          });
+          
+          if (matchingDatasetGame) {
+            return {
+              ...oddsGame,
+              datasetGame: matchingDatasetGame.datasetGame
+            };
+          }
+          return oddsGame;
+        });
+      } else {
+        gamesWithIds = datasetGames;
+      }
+
+      if (gamesWithIds.length === 0) {
+        setError("No games found in dataset.");
+        return;
+      }
+
+      gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
+      
       setGames(gamesWithIds);
 
       for (const game of gamesWithIds) {
-        const hasValidTeams = game.home_team && game.away_team && 
+        const hasValidTeams = game.home_team && 
+                             game.away_team && 
                              typeof game.home_team === 'string' && 
-                             typeof game.away_team === 'string';
+                             typeof game.away_team === 'string' &&
+                             game.home_team !== 'Unknown Home' &&
+                             game.away_team !== 'Unknown Away';
         
         if (!hasValidTeams) continue;
         
@@ -738,8 +983,20 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         ]).then(([homeData, awayData]) => {
           setEspnDataCache(prev => ({
             ...prev,
-            [game.id]: { home: homeData, away: awayData, fetchedAt: new Date().toISOString() }
+            [game.id]: { 
+              home: homeData, 
+              away: awayData, 
+              fetchedAt: new Date().toISOString(),
+              status: (homeData?.injuries?.length > 0 || awayData?.injuries?.length > 0) ? 'success' : 'limited',
+              source: homeData?.source || 'unknown'
+            }
           }));
+          
+          if (homeData?.source === 'api-sports' || awayData?.source === 'api-sports') {
+            setInjuryApiStatus(prev => ({ ...prev, available: true }));
+          }
+        }).catch(err => {
+          console.log('Injury fetch error for game:', err);
         });
       }
 
@@ -763,10 +1020,17 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
       const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0 };
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(gameData, advancedFeatures, injuryImpact) : null;
       const marketAnalysis = statPrediction ? findMarketValue(game, statPrediction) : null;
-      const ensemblePrediction = statPrediction ? 
-        calculateEnsemblePrediction(statPrediction, null, marketAnalysis?.marketSpread) : null;
+      const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
+      const ensemblePrediction = statPrediction && !isCFB ? 
+        calculateEnsemblePrediction(statPrediction, nfeloPrediction, marketAnalysis?.marketSpread) : 
+        statPrediction ? calculateEnsemblePrediction(statPrediction, null, marketAnalysis?.marketSpread) : null;
 
       let prompt = `Analyze: ${game.away_team} @ ${game.home_team}\n\n`;
+      
+      if (game.hasBackendData) {
+        prompt += `**DATA ENHANCED: Backend APIs supplemented the JSON dataset**\n\n`;
+      }
+      
       prompt += `**SPORT: ${isCFB ? 'COLLEGE FOOTBALL' : 'NFL'}**\n\n`;
 
       if (statPrediction && marketAnalysis) {
@@ -789,6 +1053,18 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         }
       }
 
+      if (nfeloPrediction) {
+        prompt += `**NFELO PREDICTIONS:**\n`;
+        prompt += `Elo Ratings: ${game.home_team} ${nfeloPrediction.home_elo || nfeloPrediction.home_rating}, ${game.away_team} ${nfeloPrediction.away_elo || nfeloPrediction.away_rating}\n`;
+        if (nfeloPrediction.predicted_spread !== undefined) {
+          prompt += `nfelo Spread: ${game.home_team} ${nfeloPrediction.predicted_spread > 0 ? '-' : '+'}${Math.abs(nfeloPrediction.predicted_spread)}\n`;
+        }
+        if (nfeloPrediction.home_win_prob !== undefined) {
+          prompt += `Win Probability: ${game.home_team} ${(nfeloPrediction.home_win_prob * 100).toFixed(1)}%\n`;
+        }
+        prompt += `\n`;
+      }
+
       if (ensemblePrediction) {
         prompt += `**ENSEMBLE PROJECTION:**\n`;
         prompt += `Weighted Spread: ${game.home_team} ${ensemblePrediction.ensembleSpread > 0 ? '-' : '+'}${Math.abs(ensemblePrediction.ensembleSpread)}\n`;
@@ -800,10 +1076,40 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         prompt += `${game.home_team}: -${injuryImpact.home.toFixed(1)} pts (${espnData?.home?.injuries?.length || 0} injuries)\n`;
         prompt += `${game.away_team}: -${injuryImpact.away.toFixed(1)} pts (${espnData?.away?.injuries?.length || 0} injuries)\n`;
         prompt += `Net Edge: ${Math.abs(injuryImpact.differential).toFixed(1)} pts favoring ${injuryImpact.differential > 0 ? game.away_team : game.home_team}\n\n`;
+        
+        if (espnData?.home?.injuries?.length > 0) {
+          prompt += `${game.home_team} Injuries:\n`;
+          espnData.home.injuries.forEach((inj, i) => {
+            prompt += `${i + 1}. ${inj.headline}\n`;
+          });
+          prompt += `\n`;
+        }
+        if (espnData?.away?.injuries?.length > 0) {
+          prompt += `${game.away_team} Injuries:\n`;
+          espnData.away.injuries.forEach((inj, i) => {
+            prompt += `${i + 1}. ${inj.headline}\n`;
+          });
+          prompt += `\n`;
+        }
       }
 
       prompt += `**COMPLETE DATASET:**\n${JSON.stringify(gameData, null, 2)}\n\n`;
-      prompt += `Use ${isCFB ? 'CFB' : 'NFL'} methodology. Show all calculations. Verify defensive success rate signs are correct.`;
+
+      if (game.bookmakers?.length > 0) {
+        prompt += `**MARKET ODDS:**\n`;
+        game.bookmakers.slice(0, 2).forEach(book => {
+          prompt += `${book.title}:\n`;
+          book.markets?.forEach(market => {
+            prompt += `  ${market.key}: `;
+            market.outcomes?.forEach(outcome => {
+              prompt += `${outcome.name} ${outcome.point || ''} ${outcome.price} | `;
+            });
+            prompt += `\n`;
+          });
+        });
+      }
+
+      prompt += `\nUse ${isCFB ? 'CFB' : 'NFL'} methodology. Show all calculations. Verify defensive success rate signs are correct.`;
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -831,6 +1137,7 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
           text: analysis, 
           marketAnalysis, 
           statPrediction,
+          nfeloPrediction,
           ensemblePrediction
         }
       }));
@@ -894,7 +1201,7 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
-            placeholder='Paste CFB or NFL JSON dataset...'
+            placeholder='Paste JSON dataset (CFB or NFL)...'
             style={{ width: "100%", minHeight: "150px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px", borderRadius: "4px", border: "1px solid #ddd" }}
           />
           <button 
@@ -908,11 +1215,35 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
               ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games
             </span>
           )}
+
+          {backendFetchStatus === 'fetching' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#e8f4f8", borderRadius: "4px", fontSize: "12px", color: "#004085" }}>
+              Fetching supplemental data from backend APIs...
+            </div>
+          )}
+          
+          {backendFetchStatus === 'success' && (
+            <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "12px", color: "#155724" }}>
+              ✓ Backend data successfully merged
+            </div>
+          )}
         </div>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
-          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Configure & Analyze</h2>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "15px" }}>
+          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Optional: Market Odds</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
+                The Odds API Key (optional)
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="API Key"
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
+              />
+            </div>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
               <select 
@@ -930,8 +1261,24 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
             disabled={loading || !datasetLoaded} 
             style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || !datasetLoaded) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: (loading || !datasetLoaded) ? "not-allowed" : "pointer" }}
           >
-            {loading ? "Loading..." : "Initialize Games"}
+            {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
+
+          {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
+            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px", border: "1px solid #c3e6cb" }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724" }}>
+                ✓ nfelo NFL Model Active
+              </div>
+            </div>
+          )}
+
+          {injuryApiStatus.available !== null && (
+            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: injuryApiStatus.available ? "#d4edda" : "#fff3cd", borderRadius: "6px" }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: injuryApiStatus.available ? "#155724" : "#856404" }}>
+                {injuryApiStatus.available ? "✓ API-Sports Active" : "⚠ Using ESPN fallback"}
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
@@ -940,6 +1287,9 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
           const analysis = analyses[game.id];
           const advancedFeatures = game.datasetGame ? calculateAdvancedFeatures(game.datasetGame) : null;
           const isCFB = advancedFeatures?.sport === 'CFB';
+          const espnData = espnDataCache[game.id];
+          const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
+          const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -951,26 +1301,54 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
                       {new Date(game.commence_time).toLocaleString()}
                     </div>
                     
-                    {advancedFeatures && (
-                      <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: isCFB ? "#d1ecf1" : "#d4edda", color: isCFB ? "#0c5460" : "#155724", fontWeight: "600" }}>
-                          {isCFB ? 'CFB SP+ Model' : 'NFL EPA Model'}
+                    <div style={{ marginTop: "8px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {game.hasBackendData && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#e0e7ff", color: "#3730a3", fontWeight: "600" }}>
+                          Backend Enhanced
                         </span>
-                        {analysis?.ensemblePrediction?.hasConsensus && (
-                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#d4edda", color: "#155724", fontWeight: "600" }}>
-                            Model Consensus
-                          </span>
-                        )}
-                        {analysis?.ensemblePrediction?.hasDisagreement && (
-                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#fff3cd", color: "#856404", fontWeight: "600" }}>
-                            High Variance
-                          </span>
-                        )}
-                        {analysis?.ensemblePrediction?.modelEdge > 3 && (
-                          <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#cfe2ff", color: "#084298", fontWeight: "600" }}>
-                            {analysis.ensemblePrediction.modelEdge.toFixed(1)}pt Edge
-                          </span>
-                        )}
+                      )}
+                      {advancedFeatures && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: advancedFeatures.sport === 'CFB' ? "#d1ecf1" : "#d4edda", color: advancedFeatures.sport === 'CFB' ? "#0c5460" : "#155724", fontWeight: "600" }}>
+                          {advancedFeatures.sport === 'CFB' ? '✓ CFB SP+' : '✓ NFL EPA'}
+                        </span>
+                      )}
+                      {nfeloPrediction && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#e8f4f8", color: "#0066cc", fontWeight: "600" }}>
+                          ⭐ nfelo Model
+                        </span>
+                      )}
+                      {espnData && espnData.source && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: espnData.source === 'api-sports' ? "#d4edda" : "#fff3cd", color: espnData.source === 'api-sports' ? "#155724" : "#856404", fontWeight: "600" }}>
+                          {espnData.source === 'api-sports' ? '✓ API-Sports' : espnData.source === 'espn' ? '✓ ESPN' : '⚠ Limited'}
+                        </span>
+                      )}
+                      {injuryImpact && injuryImpact.total > 0 && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: injuryImpact.total > 4 ? "#f8d7da" : "#fff3cd", color: injuryImpact.total > 4 ? "#721c24" : "#856404", fontWeight: "600" }}>
+                          {injuryImpact.total.toFixed(1)}pts impact
+                        </span>
+                      )}
+                      {analysis?.ensemblePrediction?.hasConsensus && (
+                        <span style={{ fontSize: "11px", padding: "3px 8px", borderRadius: "12px", backgroundColor: "#d4edda", color: "#155724", fontWeight: "600" }}>
+                          ✓ Model Consensus
+                        </span>
+                      )}
+                    </div>
+
+                    {nfeloPrediction && (
+                      <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f0f8ff", borderRadius: "4px", border: "1px solid #b8daff" }}>
+                        <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px", color: "#004085" }}>
+                          nfelo Predictions
+                        </div>
+                        <div style={{ fontSize: "11px", color: "#004085", display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                          <span>{game.home_team}: {nfeloPrediction.home_elo || nfeloPrediction.home_rating}</span>
+                          <span>{game.away_team}: {nfeloPrediction.away_elo || nfeloPrediction.away_rating}</span>
+                          {nfeloPrediction.predicted_spread !== undefined && (
+                            <span style={{ fontWeight: "600" }}>
+                              Spread: {game.home_team} {nfeloPrediction.predicted_spread > 0 ? '-' : '+'}
+                              {Math.abs(nfeloPrediction.predicted_spread)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1002,7 +1380,7 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
           <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "white", borderRadius: "8px" }}>
             <h3 style={{ marginTop: 0 }}>Prediction Tracking ({predictionTracking.length} picks)</h3>
             <div style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
-              Track these predictions vs actual outcomes to calibrate your model
+              Track these vs actual outcomes to calibrate your model
             </div>
             {predictionTracking.slice(-5).map((pred, idx) => (
               <div key={idx} style={{ padding: "10px", backgroundColor: "#f8f9fa", borderRadius: "4px", marginBottom: "8px", fontSize: "12px" }}>
@@ -1015,7 +1393,7 @@ Use clear headers, bullet points for readability. Bold key numbers. Create compa
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.0: Fixed CFB defensive bug • EPA integration • Ensemble modeling • Need 52.4% to break even • Call 1-800-GAMBLER
+            v2.0: Fixed CFB defensive bug • EPA integration • Ensemble modeling • Backend API support • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
