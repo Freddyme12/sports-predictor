@@ -955,16 +955,52 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
               home_team: game.home_team,
               away_team: game.away_team,
               date: game.date,
-              allKeys: Object.keys(game)
+              allKeys: Object.keys(game),
+              team_data_keys: game.team_data ? Object.keys(game.team_data) : null
             });
+            
+            // CRITICAL FIX: Extract team names from nested team_data structure
+            let homeTeam = 'Unknown Home';
+            let awayTeam = 'Unknown Away';
+            let gameDate = game.date || game.commence_time || new Date().toISOString();
+            
+            // Try multiple possible locations for team names
+            if (game.home_team && game.away_team) {
+              homeTeam = game.home_team;
+              awayTeam = game.away_team;
+            } else if (game.home && game.away) {
+              homeTeam = game.home;
+              awayTeam = game.away;
+            } else if (game.team_data) {
+              // Team names are nested inside team_data
+              if (game.team_data.home?.school || game.team_data.home?.team) {
+                homeTeam = game.team_data.home.school || game.team_data.home.team || game.team_data.home.name;
+              }
+              if (game.team_data.away?.school || game.team_data.away?.team) {
+                awayTeam = game.team_data.away.school || game.team_data.away.team || game.team_data.away.name;
+              }
+              
+              // Log what we found in team_data
+              console.log('Team data structure:', {
+                home_keys: game.team_data.home ? Object.keys(game.team_data.home).slice(0, 10) : null,
+                away_keys: game.team_data.away ? Object.keys(game.team_data.away).slice(0, 10) : null,
+                extracted_home: homeTeam,
+                extracted_away: awayTeam
+              });
+            } else if (game.teams) {
+              homeTeam = game.teams.home || homeTeam;
+              awayTeam = game.teams.away || awayTeam;
+            }
+            
+            console.log('Final extracted teams:', { homeTeam, awayTeam });
             
             return {
               id: game.game_id || `backend_${index}`,
               sport_key: selectedSport,
               sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
-              commence_time: game.date || game.commence_time || new Date().toISOString(),
-              home_team: game.home_team || game.home || 'Unknown Home',
-              away_team: game.away_team || game.away || 'Unknown Away',
+              commence_time: gameDate,
+              home_team: homeTeam,
+              away_team: awayTeam,
               bookmakers: [],
               backendEnhancedData: game
             };
