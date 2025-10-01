@@ -9,46 +9,38 @@ export default async function handler(req, res) {
   const { sport, team } = req.query;
   
   if (!sport || !team) {
-    return res.status(400).json({ 
-      error: 'Missing required parameters: sport, team' 
-    });
+    return res.status(400).json({ error: 'Missing sport or team parameter' });
   }
   
   try {
-    const url = `https://site.api.espn.com/apis/site/v2/sports/${sport}/news?limit=50&team=${team}`;
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0'
-      }
-    });
+    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/${sport}/teams/${team}`;
+    const response = await fetch(espnUrl);
     
     if (!response.ok) {
-      throw new Error(`ESPN returned ${response.status}`);
+      throw new Error(`ESPN API error: ${response.status}`);
     }
     
     const data = await response.json();
     
-    // Filter and return only injury-related articles
-    const injuries = data?.articles?.filter((article) => 
-      article.headline.toLowerCase().includes('injury') || 
-      article.headline.toLowerCase().includes('out') ||
-      article.headline.toLowerCase().includes('questionable') ||
-      article.headline.toLowerCase().includes('doubtful') ||
-      article.headline.toLowerCase().includes('suspended')
-    ).slice(0, 5) || [];
+    const injuries = data.team?.injuries || [];
+    const filteredInjuries = injuries
+      .filter(inj => inj.status && inj.status !== 'Out for Season')
+      .map(inj => ({
+        headline: `${inj.athlete?.displayName || 'Player'} (${inj.athlete?.position?.abbreviation || 'Unknown'}) - ${inj.status || 'Unknown'}: ${inj.details?.type || 'Injury'}`,
+        status: inj.status
+      }));
     
     return res.status(200).json({ 
-      team,
-      injuries,
+      injuries: filteredInjuries,
       success: true 
     });
     
   } catch (error) {
     console.error('ESPN proxy error:', error);
-    return res.status(500).json({ 
-      error: error.message,
-      team,
-      injuries: []
+    return res.status(200).json({ 
+      injuries: [],
+      success: false,
+      message: error.message 
     });
   }
 }
