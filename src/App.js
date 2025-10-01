@@ -17,6 +17,8 @@ export default function App() {
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
   const [predictionTracking, setPredictionTracking] = useState([]);
+  const [playerProjections, setPlayerProjections] = useState({});
+  const [showFantasyTab, setShowFantasyTab] = useState(false);
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
 
@@ -235,7 +237,62 @@ Show each formula component with explicit values and signs
 4. **Use ensemble weighting when multiple models available**
 5. **Be realistic:** 54-56% accuracy is excellent, not 70%+
 
-Educational purposes only. Need 52.4% to break even at -110.`;
+Educational purposes only. Need 52.4% to break even at -110.
+
+## FANTASY FOOTBALL PROJECTIONS
+
+When player statistics are available in the dataset, provide fantasy projections:
+
+### QB Fantasy Projection (4pt pass TD, 0.04 per pass yd, 6pt rush TD, 0.1 per rush yd)
+
+**Passing Projection:**
+- Base attempts from season average
+- Completion % from recent trend
+- Yards per attempt adjusted for opponent
+- TD rate based on red zone efficiency
+
+**Rushing Projection:**
+- Expected scrambles from pressure rate
+- Goal line carries from usage near end zone
+
+**Format:**
+- Projected Points: XX.X
+- Confidence: Low/Medium/High based on sample size and consistency
+
+### RB Fantasy Projection (6pt TD, 0.1 rush yd, 1pt rec, 0.1 rec yd)
+
+**Rushing:**
+- Carries from usage rate × team run plays
+- Yards from YPC × matchup factor
+- TD probability from goal line work
+
+**Receiving:**  
+- Targets from target share
+- Game script adjustment (trailing = more targets)
+
+### WR/TE Fantasy Projection (6pt TD, 1pt rec, 0.1 rec yd)
+
+**Targets:**
+- Route participation × team pass attempts
+- Target share from recent games
+- Injury replacements boost
+
+**Scoring:**
+- Red zone target share crucial
+- High-volume WRs more consistent
+
+**Format all as:**
+```
+PLAYER NAME (Position)
+Projected Points: XX.X
+Projection: XX rec, XXX yds, X.X TDs
+Confidence: [Low/Medium/High]
+Reasoning: [Key factors]
+```
+
+Only project for players with sufficient data (3+ games). Note small sample size concerns.
+
+**CRITICAL:** Fantasy projections are for season-long and DFS decisions, not prop betting.
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -405,6 +462,125 @@ Educational purposes only. Need 52.4% to break even at -110.`;
       return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
              (gameAway.includes(predAway) || predAway.includes(gameAway));
     });
+  };
+
+  const calculateFantasyProjections = (gameData, teamAbbr) => {
+    if (!gameData || !gameData.player_statistics || !gameData.player_statistics[teamAbbr]) {
+      return null;
+    }
+
+    const playerStats = gameData.player_statistics[teamAbbr];
+    const teamStats = gameData.team_statistics ? gameData.team_statistics[teamAbbr] : null;
+    
+    const projections = {
+      quarterbacks: [],
+      runningBacks: [],
+      receivers: []
+    };
+
+    if (playerStats.quarterbacks) {
+      playerStats.quarterbacks.forEach(qb => {
+        if (!qb.attempts || qb.attempts < 20) return;
+        
+        const completionPct = qb.completions / qb.attempts;
+        const yardsPerAttempt = qb.yards / qb.attempts;
+        const tdRate = qb.touchdowns / qb.attempts;
+        
+        const projectedAttempts = qb.attempts / 4;
+        const projectedPassYards = projectedAttempts * yardsPerAttempt;
+        const projectedPassTDs = projectedAttempts * tdRate;
+        const projectedRushYards = qb.carries ? (qb.rush_yards / qb.carries) * 3 : 0;
+        const projectedRushTDs = 0.1;
+        
+        const passingPoints = (projectedPassYards * 0.04) + (projectedPassTDs * 4);
+        const rushingPoints = (projectedRushYards * 0.1) + (projectedRushTDs * 6);
+        const totalPoints = passingPoints + rushingPoints;
+        
+        const confidence = qb.passer_rating_last3 > 85 ? 'High' : qb.passer_rating_last3 > 70 ? 'Medium' : 'Low';
+        
+        projections.quarterbacks.push({
+          name: qb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          passYards: projectedPassYards.toFixed(0),
+          passTDs: projectedPassTDs.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
+          rushTDs: projectedRushTDs.toFixed(1),
+          confidence,
+          reasoning: completionPct.toFixed(1) + '% completion, ' + yardsPerAttempt.toFixed(1) + ' YPA, rating: ' + qb.passer_rating_last3
+        });
+      });
+    }
+
+    if (playerStats.running_backs_top3) {
+      playerStats.running_backs_top3.forEach(rb => {
+        if (!rb.carries || rb.carries < 10) return;
+        
+        const ypc = rb.rush_yards / rb.carries;
+        const carriesPerGame = rb.carries / 4;
+        const projectedCarries = carriesPerGame;
+        const projectedRushYards = projectedCarries * ypc;
+        const projectedRushTDs = (rb.rush_tds / 4) || 0.3;
+        
+        const targets = rb.targets || 0;
+        const receptions = rb.receptions || 0;
+        const recYards = rb.yards || 0;
+        const projectedReceptions = receptions / 4;
+        const projectedRecYards = recYards / 4;
+        const projectedRecTDs = 0.2;
+        
+        const rushingPoints = (projectedRushYards * 0.1) + (projectedRushTDs * 6);
+        const receivingPoints = (projectedReceptions * 1) + (projectedRecYards * 0.1) + (projectedRecTDs * 6);
+        const totalPoints = rushingPoints + receivingPoints;
+        
+        const confidence = carriesPerGame > 15 ? 'High' : carriesPerGame > 10 ? 'Medium' : 'Low';
+        
+        projections.runningBacks.push({
+          name: rb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
+          rushTDs: projectedRushTDs.toFixed(1),
+          receptions: projectedReceptions.toFixed(1),
+          recYards: projectedRecYards.toFixed(0),
+          recTDs: projectedRecTDs.toFixed(1),
+          confidence,
+          reasoning: carriesPerGame.toFixed(1) + ' carries/game, ' + ypc.toFixed(1) + ' YPC'
+        });
+      });
+    }
+
+    if (playerStats.receivers_tes_top5) {
+      playerStats.receivers_tes_top5.forEach(receiver => {
+        if (!receiver.targets || receiver.targets < 8) return;
+        
+        const targetsPerGame = receiver.targets / 4;
+        const receptionRate = receiver.receptions / receiver.targets;
+        const yardsPerReception = receiver.yards / receiver.receptions;
+        const rzAttempts = teamStats && teamStats.offense && teamStats.offense.red_zone ? teamStats.offense.red_zone.attempts : 20;
+        const redZoneShare = receiver.red_zone_targets / rzAttempts;
+        
+        const projectedTargets = targetsPerGame;
+        const projectedReceptions = projectedTargets * receptionRate;
+        const projectedYards = projectedReceptions * yardsPerReception;
+        const projectedTDs = (receiver.touchdowns / 4) || (redZoneShare * 0.5);
+        
+        const totalPoints = (projectedReceptions * 1) + (projectedYards * 0.1) + (projectedTDs * 6);
+        const confidence = receiver.target_share_pct > 20 ? 'High' : receiver.target_share_pct > 15 ? 'Medium' : 'Low';
+        
+        projections.receivers.push({
+          name: receiver.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          targets: projectedTargets.toFixed(1),
+          receptions: projectedReceptions.toFixed(1),
+          yards: projectedYards.toFixed(0),
+          touchdowns: projectedTDs.toFixed(1),
+          targetShare: receiver.target_share_pct.toFixed(1) + '%',
+          confidence,
+          reasoning: receiver.target_share_pct.toFixed(1) + '% target share'
+        });
+      });
+    }
+
+    return projections;
   };
 
   const calculateAdvancedFeatures = (gameData) => {
@@ -1025,6 +1201,20 @@ Educational purposes only. Need 52.4% to break even at -110.`;
         calculateEnsemblePrediction(statPrediction, nfeloPrediction, marketAnalysis?.marketSpread) : 
         statPrediction ? calculateEnsemblePrediction(statPrediction, null, marketAnalysis?.marketSpread) : null;
 
+      // Generate fantasy projections if NFL game with player data
+      let fantasyData = null;
+      if (!isCFB && gameData.player_statistics) {
+        const homeTeam = gameData.teams?.home;
+        const awayTeam = gameData.teams?.away;
+        
+        if (homeTeam && awayTeam) {
+          fantasyData = {
+            home: calculateFantasyProjections(gameData, homeTeam, espnData?.home),
+            away: calculateFantasyProjections(gameData, awayTeam, espnData?.away)
+          };
+        }
+      }
+
       let prompt = `Analyze: ${game.away_team} @ ${game.home_team}\n\n`;
       
       if (game.hasBackendData) {
@@ -1138,7 +1328,8 @@ Educational purposes only. Need 52.4% to break even at -110.`;
           marketAnalysis, 
           statPrediction,
           nfeloPrediction,
-          ensemblePrediction
+          ensemblePrediction,
+          fantasyData
         }
       }));
 
@@ -1368,6 +1559,88 @@ Educational purposes only. Need 52.4% to break even at -110.`;
                     {analysis.text}
                   </div>
                 )}
+
+                {analysis?.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
+                  <div style={{ marginTop: "20px", padding: "20px", backgroundColor: "#f0f8ff", borderRadius: "8px", border: "2px solid #0066cc" }}>
+                    <h3 style={{ margin: "0 0 15px 0", color: "#0066cc", fontSize: "18px", display: "flex", alignItems: "center", gap: "10px" }}>
+                      🏈 Fantasy Football Projections
+                      <span style={{ fontSize: "11px", padding: "3px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "12px", fontWeight: "600" }}>
+                        FANTASY ONLY - NOT FOR PROP BETTING
+                      </span>
+                    </h3>
+                    
+                    {[
+                      { label: game.away_team, data: analysis.fantasyData.away },
+                      { label: game.home_team, data: analysis.fantasyData.home }
+                    ].map(team => {
+                      if (!team.data) return null;
+                      
+                      return (
+                        <div key={team.label} style={{ marginBottom: "20px" }}>
+                          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: "600", color: "#333" }}>
+                            {team.label}
+                          </h4>
+                          
+                          {team.data.quarterbacks?.length > 0 && (
+                            <div style={{ marginBottom: "15px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", color: "#666", marginBottom: "5px" }}>Quarterbacks</div>
+                              {team.data.quarterbacks.map((qb, idx) => (
+                                <div key={idx} style={{ padding: "8px", backgroundColor: "white", borderRadius: "4px", marginBottom: "5px", fontSize: "11px" }}>
+                                  <div style={{ fontWeight: "600", marginBottom: "3px" }}>
+                                    {qb.name} - {qb.projectedPoints} pts ({qb.confidence})
+                                  </div>
+                                  <div style={{ color: "#666" }}>
+                                    {qb.passYards} pass yds, {qb.passTDs} pass TDs, {qb.rushYards} rush yds
+                                  </div>
+                                  <div style={{ color: "#888", fontSize: "10px", marginTop: "2px" }}>{qb.reasoning}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.runningBacks?.length > 0 && (
+                            <div style={{ marginBottom: "15px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", color: "#666", marginBottom: "5px" }}>Running Backs</div>
+                              {team.data.runningBacks.map((rb, idx) => (
+                                <div key={idx} style={{ padding: "8px", backgroundColor: "white", borderRadius: "4px", marginBottom: "5px", fontSize: "11px" }}>
+                                  <div style={{ fontWeight: "600", marginBottom: "3px" }}>
+                                    {rb.name} - {rb.projectedPoints} pts ({rb.confidence})
+                                  </div>
+                                  <div style={{ color: "#666" }}>
+                                    {rb.rushYards} rush yds, {rb.rushTDs} rush TDs, {rb.receptions} rec, {rb.recYards} rec yds
+                                  </div>
+                                  <div style={{ color: "#888", fontSize: "10px", marginTop: "2px" }}>{rb.reasoning}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.receivers?.length > 0 && (
+                            <div style={{ marginBottom: "15px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", color: "#666", marginBottom: "5px" }}>Receivers/TEs</div>
+                              {team.data.receivers.map((rec, idx) => (
+                                <div key={idx} style={{ padding: "8px", backgroundColor: "white", borderRadius: "4px", marginBottom: "5px", fontSize: "11px" }}>
+                                  <div style={{ fontWeight: "600", marginBottom: "3px" }}>
+                                    {rec.name} - {rec.projectedPoints} pts ({rec.confidence})
+                                  </div>
+                                  <div style={{ color: "#666" }}>
+                                    {rec.receptions} rec, {rec.yards} yds, {rec.touchdowns} TDs ({rec.targetShare} target share)
+                                  </div>
+                                  <div style={{ color: "#888", fontSize: "10px", marginTop: "2px" }}>{rec.reasoning}</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "11px", color: "#856404" }}>
+                      <strong>Note:</strong> Projections based on 4-game sample (Full PPR scoring). For season-long and DFS decisions only. Small sample size - use with caution. Not suitable for prop betting.
+                    </div>
+                  </div>
+                )}
+
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating enhanced analysis...</div>
                 )}
