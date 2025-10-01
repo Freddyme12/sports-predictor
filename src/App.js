@@ -333,27 +333,53 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         throw new Error("Enhanced data only available for NFL/CFB");
       }
       
-      console.log('Fetching backend data from:', endpoint + params);
-      const response = await fetch(endpoint + params);
+      const fullUrl = endpoint + params;
+      console.log('=== BACKEND FETCH ATTEMPT ===');
+      console.log('Fetching from:', fullUrl);
+      console.log('Current year:', currentYear);
+      console.log('Current week:', currentWeek);
+      
+      const response = await fetch(fullUrl);
+      
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
       
       if (!response.ok) {
-        throw new Error(`Backend API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Backend API error response:', errorText);
+        throw new Error(`Backend API error: ${response.status} - ${errorText.substring(0, 200)}`);
       }
       
       const data = await response.json();
+      console.log('Backend response data:', data);
+      console.log('Data type:', typeof data);
+      console.log('Data keys:', Object.keys(data || {}));
       
       if (data.error) {
         throw new Error(data.message || data.error);
       }
       
-      console.log('Backend data loaded successfully:', data);
+      if (!data.games || data.games.length === 0) {
+        console.warn('Backend returned no games');
+        setBackendDataAvailable(false);
+        setError(`Backend returned no games for ${selectedSport} week ${currentWeek}. Data may not be available yet.`);
+        return null;
+      }
+      
+      console.log('Backend data loaded successfully:', data.games.length, 'games');
+      console.log('Backend games structure:', data.games?.[0] ? Object.keys(data.games[0]) : 'No games');
+      console.log('First game sample:', JSON.stringify(data.games?.[0], null, 2));
       setEnhancedData(data);
       setBackendDataAvailable(data.games && data.games.length > 0);
       return data;
     } catch (err) {
-      console.error("Enhanced data fetch failed:", err);
+      console.error("=== BACKEND FETCH FAILED ===");
+      console.error("Error details:", err);
+      console.error("Error message:", err.message);
+      console.error("Error stack:", err.stack);
       setBackendDataAvailable(false);
-      setError(`Backend data unavailable: ${err.message}. Using other sources.`);
+      setError(`Backend data unavailable: ${err.message}`);
       return null;
     }
   };
@@ -749,6 +775,12 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   };
 
   const fetchESPNData = async (teamName, sport) => {
+    // CRITICAL FIX: Don't fetch if team name is invalid
+    if (!teamName || typeof teamName !== 'string' || teamName === 'Unknown Home' || teamName === 'Unknown Away') {
+      console.warn('Skipping ESPN fetch for invalid team name:', teamName);
+      return { team: teamName || 'Unknown', injuries: [], lastUpdated: new Date().toISOString() };
+    }
+    
     try {
       const sportMap = { 
         'americanfootball_nfl': 'football/nfl',
@@ -781,6 +813,12 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   };
 
   const getTeamAbbreviation = (teamName, sport) => {
+    // CRITICAL FIX: Handle undefined/null team names
+    if (!teamName || typeof teamName !== 'string') {
+      console.warn('getTeamAbbreviation called with invalid teamName:', teamName);
+      return 'unknown';
+    }
+    
     const nflTeams = {
       'Arizona Cardinals': 'ari', 'Atlanta Falcons': 'atl', 'Baltimore Ravens': 'bal',
       'Buffalo Bills': 'buf', 'Carolina Panthers': 'car', 'Chicago Bears': 'chi',
@@ -910,16 +948,28 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
             } : oddsGame;
           });
         } else {
-          gamesWithIds = backendData.games.map((game, index) => ({
-            id: game.game_id || `backend_${index}`,
-            sport_key: selectedSport,
-            sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
-            commence_time: game.date || new Date().toISOString(),
-            home_team: game.home_team,
-            away_team: game.away_team,
-            bookmakers: [],
-            backendEnhancedData: game
-          }));
+          console.log('No odds data - creating games from backend data only');
+          gamesWithIds = backendData.games.map((game, index) => {
+            console.log('Processing backend game:', {
+              game_id: game.game_id,
+              home_team: game.home_team,
+              away_team: game.away_team,
+              date: game.date,
+              allKeys: Object.keys(game)
+            });
+            
+            return {
+              id: game.game_id || `backend_${index}`,
+              sport_key: selectedSport,
+              sport_title: selectedSport.replace(/_/g, ' ').toUpperCase(),
+              commence_time: game.date || game.commence_time || new Date().toISOString(),
+              home_team: game.home_team || game.home || 'Unknown Home',
+              away_team: game.away_team || game.away || 'Unknown Away',
+              bookmakers: [],
+              backendEnhancedData: game
+            };
+          });
+          console.log('Created games from backend:', gamesWithIds.map(g => `${g.away_team} @ ${g.home_team}`));
         }
       }
 
@@ -983,7 +1033,26 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
       setGames(gamesWithIds);
 
+      // IMPROVED: Only fetch ESPN data for games with valid team names
+      console.log('=== ESPN FETCH PHASE ===');
       for (const game of gamesWithIds) {
+        const hasValidTeams = game.home_team && 
+                             game.away_team && 
+                             typeof game.home_team === 'string' && 
+                             typeof game.away_team === 'string' &&
+                             game.home_team !== 'Unknown Home' &&
+                             game.away_team !== 'Unknown Away';
+        
+        if (!hasValidTeams) {
+          console.warn('Skipping ESPN fetch for game with invalid teams:', {
+            id: game.id,
+            home: game.home_team,
+            away: game.away_team,
+            allKeys: Object.keys(game)
+          });
+          continue;
+        }
+        
         Promise.all([
           fetchESPNData(game.home_team, selectedSport),
           fetchESPNData(game.away_team, selectedSport)
@@ -1382,6 +1451,31 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
+
+        {games.length === 0 && !loading && !error && (
+          <div style={{ backgroundColor: "#fff3cd", padding: "20px", borderRadius: "8px", marginBottom: "20px", color: "#856404", textAlign: "center" }}>
+            <h3 style={{ marginTop: 0 }}>No games found</h3>
+            <p>Please check:</p>
+            <ul style={{ textAlign: "left", maxWidth: "500px", margin: "10px auto" }}>
+              <li>At least one data source is enabled</li>
+              <li>The backend API is returning data (check console for logs)</li>
+              <li>Your manual dataset is properly formatted</li>
+              <li>The selected sport matches your data</li>
+            </ul>
+            <p style={{ marginTop: "15px", fontWeight: "600" }}>Open browser console (F12) to see detailed debug information</p>
+          </div>
+        )}
+
+        {games.length > 0 && (
+          <div style={{ backgroundColor: "#e8f4f8", padding: "15px", borderRadius: "8px", marginBottom: "20px", border: "1px solid #b8daff" }}>
+            <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "8px", color: "#004085" }}>
+              Debug Info: {games.length} game{games.length !== 1 ? 's' : ''} loaded
+            </div>
+            <div style={{ fontSize: "12px", color: "#004085" }}>
+              Check browser console (F12) for detailed data structure and matching logs
+            </div>
+          </div>
+        )}
 
         {games.map(game => {
           const analysis = analyses[game.id];
