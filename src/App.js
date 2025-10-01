@@ -84,7 +84,7 @@ export default function App() {
           const bgAway = normalizeTeam(bgGame.away_team);
           
           return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
-                 (jsonAway.includes(bgAway) || bgAway.includes(jsonAway));
+                 (jsonAway.includes(bgAway) || bgAway.includes(bgAway));
         });
         
         if (matchingBackendGame) {
@@ -123,10 +123,6 @@ export default function App() {
   const fetchNfeloData = async () => {
     setNfeloAvailable(false);
     return null;
-    
-    // nfelo no longer provides public API/JSON data after their rebuild
-    // Keeping this function for future implementation if they add API access
-    // Contact @greerreNFL on Twitter or GitHub for updates
   };
 
   const findNfeloPrediction = (game) => {
@@ -153,23 +149,126 @@ export default function App() {
     });
   };
 
-  const fetchApiSportsOdds = async (gameDate) => {
+  const fetchApiSportsOddsViaBackend = async (sport, gameDate) => {
     if (!apiSportsKey) return null;
 
     try {
-      const headers = {
-        'x-apisports-key': apiSportsKey
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
       };
-
-      const response = await fetch('https://v1.american-football.api-sports.io/games?season=2025&date=' + gameDate, {
-        method: 'GET',
-        headers: headers
-      });
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const response = await fetch(
+        `${BACKEND_URL}/api/apisports-odds?sport=${encodeURIComponent(sportPath)}&date=${gameDate}`,
+        {
+          headers: {
+            'x-api-key': apiSportsKey
+          }
+        }
+      );
 
       if (!response.ok) return null;
       const data = await response.json();
-      return data.response || [];
+      return data.odds || [];
     } catch (error) {
+      console.error('API-Sports odds fetch error:', error);
+      return null;
+    }
+  };
+
+  const fetchApiSportsPlayersViaBackend = async (teamName, sport) => {
+    if (!apiSportsKey || !teamName) return null;
+
+    try {
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const response = await fetch(
+        `${BACKEND_URL}/api/apisports-players?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
+        {
+          headers: {
+            'x-api-key': apiSportsKey
+          }
+        }
+      );
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.players || [];
+    } catch (error) {
+      console.error('API-Sports players fetch error:', error);
+      return null;
+    }
+  };
+
+  const fetchApiSportsStatsViaBackend = async (teamName, sport) => {
+    if (!apiSportsKey || !teamName) return null;
+
+    try {
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const response = await fetch(
+        `${BACKEND_URL}/api/apisports-stats?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
+        {
+          headers: {
+            'x-api-key': apiSportsKey
+          }
+        }
+      );
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.statistics || null;
+    } catch (error) {
+      console.error('API-Sports stats fetch error:', error);
+      return null;
+    }
+  };
+
+  const fetchApiSportsGamesViaBackend = async (sport, date) => {
+    if (!apiSportsKey) return null;
+
+    try {
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const response = await fetch(
+        `${BACKEND_URL}/api/apisports-games?sport=${encodeURIComponent(sportPath)}&date=${date}`,
+        {
+          headers: {
+            'x-api-key': apiSportsKey
+          }
+        }
+      );
+
+      if (!response.ok) return null;
+      const data = await response.json();
+      return data.games || [];
+    } catch (error) {
+      console.error('API-Sports games fetch error:', error);
       return null;
     }
   };
@@ -180,21 +279,22 @@ export default function App() {
     }
 
     try {
-      let apiUrl = '';
-      if (sport === 'americanfootball_nfl') {
-        apiUrl = 'https://v1.american-football.api-sports.io/teams';
-      } else {
-        return { team: teamName, injuries: [], source: 'unsupported-sport' };
-      }
-
-      const headers = {
-        'x-apisports-key': apiSportsKey
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
       };
-
-      const response = await fetch(apiUrl + '?name=' + encodeURIComponent(teamName), {
-        method: 'GET',
-        headers: headers
-      });
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      
+      const response = await fetch(
+        `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
+        {
+          headers: apiSportsKey ? { 'x-api-key': apiSportsKey } : {}
+        }
+      );
 
       if (!response.ok) {
         return { team: teamName, injuries: [], source: 'api-error' };
@@ -202,30 +302,19 @@ export default function App() {
 
       const data = await response.json();
       
-      if (data.response && data.response.length > 0) {
-        const teamId = data.response[0].id;
-        
-        const injuryResponse = await fetch('https://v1.american-football.api-sports.io/injuries?team=' + teamId + '&season=2025', {
-          method: 'GET',
-          headers: headers
-        });
-
-        if (injuryResponse.ok) {
-          const injuryData = await injuryResponse.json();
-          const injuries = (injuryData.response || []).map(inj => ({
-            headline: inj.player.name + ' - ' + inj.type + ' (' + inj.reason + ')'
-          }));
-          
-          return {
-            team: teamName,
-            injuries: injuries,
-            source: 'api-sports'
-          };
-        }
+      if (data.success && data.injuries) {
+        return {
+          team: teamName,
+          injuries: data.injuries.map(inj => ({
+            headline: inj.headline || `${inj.player || 'Unknown'} - ${inj.status || 'Unknown'}`
+          })),
+          source: data.source || 'backend'
+        };
       }
 
       return { team: teamName, injuries: [], source: 'no-data' };
     } catch (error) {
+      console.error('Injury fetch error:', error);
       return { team: teamName, injuries: [], source: 'error' };
     }
   };
@@ -585,20 +674,20 @@ export default function App() {
         }
       }
 
-      if (gamesWithIds.length === 0 && apiSportsKey && selectedSport === "americanfootball_nfl") {
+      if (gamesWithIds.length === 0 && apiSportsKey) {
         const today = new Date().toISOString().split('T')[0];
-        const apiSportsGames = await fetchApiSportsOdds(today);
+        const apiSportsOdds = await fetchApiSportsOddsViaBackend(selectedSport, today);
         
-        if (apiSportsGames && apiSportsGames.length > 0) {
+        if (apiSportsOdds && apiSportsOdds.length > 0) {
           useApiSportsForOdds = true;
-          gamesWithIds = apiSportsGames.map((game, index) => ({
-            id: game.game.id || ("apisports_" + index),
+          gamesWithIds = apiSportsOdds.map((odd, index) => ({
+            id: odd.game?.id || ("apisports_" + index),
             sport_key: selectedSport,
-            commence_time: game.game.date.date,
-            home_team: game.teams.home.name,
-            away_team: game.teams.away.name,
+            commence_time: odd.game?.date || new Date().toISOString(),
+            home_team: odd.teams?.home?.name || 'Unknown',
+            away_team: odd.teams?.away?.name || 'Unknown',
             bookmakers: [],
-            apiSportsOdds: game.odds || []
+            apiSportsOdds: [odd]
           }));
         }
       }
@@ -914,9 +1003,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.2</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.3</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Full API-Sports Integration • Fixed Formulas • Ensemble Modeling • Fantasy Projections
+          Backend Integration • API-Sports via Vercel • Fixed Formulas • Ensemble Modeling • Fantasy Projections
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -945,10 +1034,12 @@ export default function App() {
           
           <div style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#e8f5e9", borderRadius: "6px", border: "2px solid #4caf50" }}>
             <div style={{ fontSize: "14px", fontWeight: "600", color: "#2e7d32", marginBottom: "8px" }}>
-              ⭐ RECOMMENDED: API-Sports (All-in-One Solution)
+              ⭐ RECOMMENDED: API-Sports (All Backend Calls)
             </div>
             <div style={{ fontSize: "12px", color: "#495057", marginBottom: "10px" }}>
-              API-Sports provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Statistics</strong>, Games, Standings, and more!
+              All API-Sports calls now go through your Vercel backend for security!
+              <br />
+              Provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Players</strong>, <strong>Stats</strong>, <strong>Games</strong>
               <br />
               Free tier: 100 requests/day. Paid plans start at $10/month.
               <br />
@@ -963,7 +1054,7 @@ export default function App() {
             />
             {apiSportsKey && (
               <div style={{ fontSize: "11px", color: "#155724", fontWeight: "600" }}>
-                ✓ API-Sports will be used for injuries and as fallback for odds (if The Odds API unavailable)
+                ✓ API-Sports will be used via backend proxy endpoints (secure)
               </div>
             )}
           </div>
@@ -1183,7 +1274,7 @@ export default function App() {
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.2: Full API-Sports integration (injuries + odds fallback) • Data validation • Fixed fantasy • nfelo notice • Call 1-800-GAMBLER
+            v2.3: Backend proxied API-Sports • Secure API calls via Vercel • Full data integration • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
