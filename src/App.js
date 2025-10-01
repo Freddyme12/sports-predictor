@@ -403,13 +403,28 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   };
 
   const calculateAdvancedFeatures = (gameData) => {
-    if (!gameData) return null;
+    if (!gameData) {
+      console.log('calculateAdvancedFeatures: No gameData provided');
+      return null;
+    }
 
     if (gameData.team_data) {
       const home = gameData.team_data.home;
       const away = gameData.team_data.away;
 
-      if (!home || !away) return null;
+      if (!home || !away) {
+        console.log('calculateAdvancedFeatures: Missing home or away team data');
+        return null;
+      }
+
+      // Check if we have actual data (not all zeros)
+      const hasValidData = home.sp_overall || home.off_success_rate || home.points_per_game ||
+                          away.sp_overall || away.off_success_rate || away.points_per_game;
+      
+      if (!hasValidData) {
+        console.log('calculateAdvancedFeatures: All CFB metrics are zero - data not available');
+        return null;
+      }
 
       return {
         sport: 'CFB',
@@ -852,6 +867,8 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       }
 
       if (backendData && backendData.games) {
+        console.log('Backend data loaded with', backendData.games.length, 'games');
+        
         if (gamesWithIds.length > 0) {
           gamesWithIds = gamesWithIds.map(oddsGame => {
             const matchingBackendGame = backendData.games.find(bg => {
@@ -860,11 +877,32 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                 return false;
               }
               
-              return (bg.home_team.toLowerCase().includes(oddsGame.home_team.toLowerCase()) ||
-                     oddsGame.home_team.toLowerCase().includes(bg.home_team.toLowerCase())) &&
-                    (bg.away_team.toLowerCase().includes(oddsGame.away_team.toLowerCase()) ||
-                     oddsGame.away_team.toLowerCase().includes(bg.away_team.toLowerCase()));
+              // Normalize team names for better matching
+              const normalizeTeam = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
+              const bgHome = normalizeTeam(bg.home_team);
+              const bgAway = normalizeTeam(bg.away_team);
+              const oddsHome = normalizeTeam(oddsGame.home_team);
+              const oddsAway = normalizeTeam(oddsGame.away_team);
+              
+              // Try multiple matching strategies
+              const exactMatch = (bgHome === oddsHome && bgAway === oddsAway);
+              const containsMatch = (bgHome.includes(oddsHome) || oddsHome.includes(bgHome)) &&
+                                   (bgAway.includes(oddsAway) || oddsAway.includes(bgAway));
+              const partialMatch = (bgHome.substring(0, 4) === oddsHome.substring(0, 4)) &&
+                                  (bgAway.substring(0, 4) === oddsAway.substring(0, 4));
+              
+              const isMatch = exactMatch || containsMatch || partialMatch;
+              
+              if (isMatch) {
+                console.log('✓ Matched:', oddsGame.home_team, 'vs', oddsGame.away_team, 'with backend data');
+              }
+              
+              return isMatch;
             });
+            
+            if (!matchingBackendGame) {
+              console.log('✗ No backend match for:', oddsGame.home_team, 'vs', oddsGame.away_team);
+            }
             
             return matchingBackendGame ? {
               ...oddsGame,
@@ -981,9 +1019,19 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       sources.push(oddsGame.manualEnhancedData);
     }
     
-    if (sources.length === 0) return null;
-    if (sources.length === 1) return sources[0];
+    console.log('findMatchingDatasetGame: Found', sources.length, 'sources for', oddsGame.home_team, 'vs', oddsGame.away_team);
     
+    if (sources.length === 0) {
+      console.log('findMatchingDatasetGame: No data sources available');
+      return null;
+    }
+    
+    if (sources.length === 1) {
+      console.log('findMatchingDatasetGame: Using single source');
+      return sources[0];
+    }
+    
+    console.log('findMatchingDatasetGame: Merging', sources.length, 'sources');
     const merged = { ...sources[0] };
     
     for (let i = 1; i < sources.length; i++) {
@@ -1010,6 +1058,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       });
     }
     
+    console.log('findMatchingDatasetGame: Merged data structure:', Object.keys(merged));
     return merged;
   };
 
@@ -1018,8 +1067,23 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
     try {
       const datasetGame = findMatchingDatasetGame(game);
+      console.log('=== ANALYZE GAME DEBUG ===');
+      console.log('Game:', game.home_team, 'vs', game.away_team);
+      console.log('datasetGame found:', !!datasetGame);
+      if (datasetGame) {
+        console.log('datasetGame structure:', Object.keys(datasetGame));
+        if (datasetGame.team_data) {
+          console.log('CFB team_data exists:', {
+            home: !!datasetGame.team_data.home,
+            away: !!datasetGame.team_data.away
+          });
+        }
+      }
+      
       const espnData = espnDataCache[game.id];
       const advancedFeatures = datasetGame ? calculateAdvancedFeatures(datasetGame) : null;
+      console.log('advancedFeatures:', advancedFeatures ? 'FOUND' : 'NULL');
+      
       const isCFB = advancedFeatures?.sport === 'CFB';
       const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : { home: 0, away: 0, total: 0 };
       const statPrediction = advancedFeatures ? calculateStatisticalPrediction(datasetGame, advancedFeatures, injuryImpact) : null;
@@ -1037,9 +1101,26 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         prompt += `**DATA SOURCES: ${dataSources.join(' + ')}**\n\n`;
       }
       
+      // Add data availability warning if no advanced features found
+      if (!advancedFeatures) {
+        prompt += `**⚠️ DATA AVAILABILITY ISSUE:**\n`;
+        prompt += `Unable to retrieve advanced statistical metrics for this matchup.\n`;
+        prompt += `Possible causes:\n`;
+        prompt += `- Backend API data not loaded for this game\n`;
+        prompt += `- Manual dataset doesn't contain this matchup\n`;
+        prompt += `- Team name mismatch between odds data and statistical data\n\n`;
+        prompt += `**AVAILABLE DATA ONLY:**\n`;
+        prompt += `Please analyze using:\n`;
+        prompt += `- Market odds (if available)\n`;
+        prompt += `- Injury reports (if loaded)\n`;
+        prompt += `- General team information\n`;
+        prompt += `- Historical context and trends\n\n`;
+        prompt += `Note: Predictions will be less accurate without advanced metrics.\n\n`;
+      }
+      
       if (isCFB) {
         prompt += `**SPORT: COLLEGE FOOTBALL**\n\n`;
-      } else {
+      } else if (advancedFeatures) {
         prompt += `**SPORT: NFL**\n\n`;
       }
 
