@@ -410,7 +410,28 @@ export default function App() {
         await fetchNfeloData();
       }
 
-      let gamesWithIds = parsedDataset.games.map((game, index) => {
+      let gamesWithIds = [];
+
+      if (apiKey.trim()) {
+        try {
+          const url = "https://api.the-odds-api.com/v4/sports/" + selectedSport + "/odds?apiKey=" + apiKey + "&regions=us&markets=h2h,spreads,totals&oddsFormat=american";
+          const response = await fetch(url);
+
+          if (response.ok) {
+            const oddsData = await response.json();
+            if (oddsData && oddsData.length > 0) {
+              gamesWithIds = oddsData.map((game, index) => ({
+                ...game,
+                id: game.id || (game.sport_key + "_" + index)
+              }));
+            }
+          }
+        } catch (apiError) {
+          console.warn("Odds API unavailable:", apiError);
+        }
+      }
+
+      const datasetGames = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
         if (game.team_data) {
@@ -433,6 +454,34 @@ export default function App() {
           datasetGame: game
         };
       });
+
+      if (gamesWithIds.length > 0) {
+        gamesWithIds = gamesWithIds.map(oddsGame => {
+          const matchingDatasetGame = datasetGames.find(dg => {
+            if (!dg.home_team || !dg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
+              return false;
+            }
+            
+            const normalizeTeam = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
+            const dgHome = normalizeTeam(dg.home_team);
+            const dgAway = normalizeTeam(dg.away_team);
+            const oddsHome = normalizeTeam(oddsGame.home_team);
+            const oddsAway = normalizeTeam(oddsGame.away_team);
+            
+            return (dgHome.includes(oddsHome) || oddsHome.includes(dgHome)) &&
+                   (dgAway.includes(oddsAway) || oddsAway.includes(dgAway));
+          });
+          
+          if (matchingDatasetGame) {
+            return Object.assign({}, oddsGame, {
+              datasetGame: matchingDatasetGame.datasetGame
+            });
+          }
+          return oddsGame;
+        });
+      } else {
+        gamesWithIds = datasetGames;
+      }
 
       gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
       
@@ -585,16 +634,30 @@ export default function App() {
         </div>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
-          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Configure & Analyze</h2>
-          <div>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
-            <select 
-              value={selectedSport} 
-              onChange={(e) => setSelectedSport(e.target.value)} 
-              style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
-            >
-              {sports.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}
-            </select>
+          <h2 style={{ fontSize: "1.2rem", marginTop: 0 }}>2. Optional: Market Odds</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
+                The Odds API Key (optional - for live betting lines)
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="API Key"
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
+              />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
+              <select 
+                value={selectedSport} 
+                onChange={(e) => setSelectedSport(e.target.value)} 
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
+              >
+                {sports.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}
+              </select>
+            </div>
           </div>
 
           <button 
