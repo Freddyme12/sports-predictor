@@ -23,7 +23,58 @@ export default function App() {
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  const systemPrompt = "You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.\n\nCFB Defensive Success Rate - CORRECTED: LOWER defensive success rate = BETTER defense.\n\nSPORT DETECTION: CFB has SP+, success_rate. NFL has EPA, player_statistics.\n\nCFB Spread: SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def SR) × 180 × 0.18 + Explosiveness × 25 × 0.10 + Havoc × 120 × 0.05 + Home 3.5\n\nNFL Spread: EPA diff × 320 × 0.40 + Success Rate × 250 × 0.25 + Explosive × 150 × 0.15 + 3rd Down × 100 × 0.10 + Red Zone × 80 × 0.10 + Home 2.5 + O-Line\n\nInjury: NFL QB 5.5pts, RB 1.2, WR 1.0. CFB QB 7.0pts, RB 2.0, WR 1.5.\n\nEnsemble: Model 50%, nfelo 25%, Market 25%. Consensus < 2pts = +1 confidence.\n\nFantasy (NFL): QB pass yds/TDs, rush yds. RB rush/rec. WR/TE targets/rec/yds. Full PPR. For fantasy/DFS only.\n\nEducational purposes only.";
+  const systemPrompt = `You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.
+
+=== JSON DATA STRUCTURE GUIDE ===
+NFL Data Location:
+- EPA: team_statistics.[TEAM_ABBR].offense.epa_per_play.overall
+- Success Rate: team_statistics.[TEAM_ABBR].offense.success_rate.overall
+- Explosive Plays: team_statistics.[TEAM_ABBR].offense.explosive_play_pct
+- Pass Block Win Rate: team_statistics.[TEAM_ABBR].offense.pass_block_win_rate
+- 3rd Down: team_statistics.[TEAM_ABBR].offense.third_down_conversion_rate
+- Red Zone: team_statistics.[TEAM_ABBR].offense.red_zone_scoring.td_rate
+
+CFB Data Location:
+- SP+: team_data.home.sp_overall or team_data.away.sp_overall
+- Off Success Rate: team_data.home.off_success_rate
+- Def Success Rate: team_data.home.def_success_rate (LOWER = BETTER)
+- Explosiveness: team_data.home.off_explosiveness
+- Havoc Rate: team_data.home.havoc_rate
+
+CRITICAL: Always extract values from the correct nested path. Do NOT assume values are zero if you can't find them immediately - check the full JSON structure carefully. If you see a value like -0.0217 or 0.0049, that is a REAL value, not zero.
+
+=== FORMULA CORRECTIONS ===
+CFB Defensive Success Rate - CORRECTED: LOWER defensive success rate = BETTER defense.
+
+CFB Spread Formula:
+SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def SR) × 180 × 0.18 + Explosiveness × 25 × 0.10 + Havoc × 120 × 0.05 + Home 3.5
+
+NFL Spread Formula:
+EPA diff × 320 × 0.40 + Success Rate diff × 250 × 0.25 + Explosive diff × 150 × 0.15 + 3rd Down diff × 100 × 0.10 + Red Zone diff × 80 × 0.10 + Home 2.5 + O-Line adjustment
+
+=== INJURY IMPACT ===
+NFL: QB 5.5pts, RB 1.2, WR 1.0, TE 0.6, OL 0.5
+CFB: QB 7.0pts, RB 2.0, WR 1.5, TE 1.0, OL 1.0
+
+=== ENSEMBLE WEIGHTING ===
+Full ensemble: Model 50%, nfelo 25%, Market 25%
+If nfelo unavailable: Model 67%, Market 33%
+If Market unavailable: Model 67%, nfelo 33%
+If both unavailable: Model 100% (reduce confidence by 1 tier)
+
+Consensus < 2pts difference = +1 confidence tier
+
+=== FANTASY PROJECTIONS ===
+NFL only: QB pass yds/TDs, rush yds. RB rush/rec. WR/TE targets/rec/yds. Full PPR scoring.
+For fantasy/DFS only - NOT for prop betting.
+
+=== CRITICAL INSTRUCTIONS ===
+1. ALWAYS show your data extraction first - prove you found the correct values
+2. Show the exact JSON path you used for each statistic
+3. If a value seems to be zero, double-check the JSON structure before concluding
+4. Clearly state if data is missing vs. actually zero (e.g., -0.02 is NOT zero)
+5. Show all calculation steps with actual numbers
+6. Educational purposes only - this is NOT investment advice`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -830,7 +881,7 @@ export default function App() {
         marketOdds: hasMarketData,
         marketSource: marketData ? marketData.source : null,
         nfeloModel: !!nfeloPrediction,
-        injuries: !!(espnData && (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
+        injuries: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
         injurySource: espnData ? (espnData.home.source === 'api-sports' ? 'api-sports' : 'espn') : null,
         enhancedStats: !!game.hasBackendData
       };
@@ -923,15 +974,40 @@ export default function App() {
       }
       
       prompt += "=== ANALYSIS INSTRUCTIONS ===\n";
-      prompt += "1. Start with a clear API STATUS SUMMARY showing which data sources were used\n";
-      prompt += "2. Calculate the model-based prediction using the appropriate formula\n";
-      prompt += "3. If ensemble components available, blend predictions using the weights shown above\n";
-      prompt += "4. Clearly state if ensemble modeling is degraded and adjust confidence accordingly\n";
-      prompt += "5. Show all calculation steps transparently\n";
-      prompt += "6. Provide comprehensive analysis with spread prediction, total prediction, confidence level, and key factors\n";
-      prompt += "7. Note any data quality warnings in your analysis\n\n";
+      prompt += "STEP 1: DATA EXTRACTION VERIFICATION\n";
+      prompt += "Before any calculations, you MUST explicitly extract and display the raw values from the JSON:\n\n";
       
-      prompt += "CRITICAL: Always attribute predictions to their source (Model/Market/nfelo) and explain ensemble weighting used.";
+      if (isCFB) {
+        prompt += "For CFB, extract from team_data:\n";
+        prompt += "- Home SP+: team_data.home.sp_overall = ?\n";
+        prompt += "- Away SP+: team_data.away.sp_overall = ?\n";
+        prompt += "- Home Off Success Rate: team_data.home.off_success_rate = ?\n";
+        prompt += "- Away Off Success Rate: team_data.away.off_success_rate = ?\n";
+        prompt += "- Home Def Success Rate: team_data.home.def_success_rate = ?\n";
+        prompt += "- Away Def Success Rate: team_data.away.def_success_rate = ?\n\n";
+      } else {
+        const homeTeam = gameData.teams && gameData.teams.home;
+        const awayTeam = gameData.teams && gameData.teams.away;
+        prompt += "For NFL, extract from team_statistics (Team abbreviations: Home=" + homeTeam + ", Away=" + awayTeam + "):\n";
+        prompt += "- Home EPA: team_statistics." + homeTeam + ".offense.epa_per_play.overall = ?\n";
+        prompt += "- Away EPA: team_statistics." + awayTeam + ".offense.epa_per_play.overall = ?\n";
+        prompt += "- Home Success Rate: team_statistics." + homeTeam + ".offense.success_rate.overall = ?\n";
+        prompt += "- Away Success Rate: team_statistics." + awayTeam + ".offense.success_rate.overall = ?\n";
+        prompt += "- Home Pass Block Win Rate: team_statistics." + homeTeam + ".offense.pass_block_win_rate = ?\n";
+        prompt += "- Away Pass Block Win Rate: team_statistics." + awayTeam + ".offense.pass_block_win_rate = ?\n\n";
+      }
+      
+      prompt += "If you cannot find these exact values at these exact paths, state 'VALUE NOT FOUND AT THIS PATH' and describe what you see in the JSON structure instead. Do NOT assume values are zero without checking.\n\n";
+      
+      prompt += "STEP 2: Start with a clear API STATUS SUMMARY showing which data sources were used\n";
+      prompt += "STEP 3: Calculate the model-based prediction using the appropriate formula with the extracted values\n";
+      prompt += "STEP 4: Show ALL calculation steps with actual numbers (not just formulas)\n";
+      prompt += "STEP 5: If ensemble components available, blend predictions using the weights shown above\n";
+      prompt += "STEP 6: Clearly state if ensemble modeling is degraded and adjust confidence accordingly\n";
+      prompt += "STEP 7: Provide comprehensive analysis with spread prediction, total prediction, confidence level, and key factors\n";
+      prompt += "STEP 8: Note any data quality warnings in your analysis\n\n";
+      
+      prompt += "CRITICAL: Always attribute predictions to their source (Model/Market/nfelo) and explain ensemble weighting used. If values appear to be zero or missing, EXPLICITLY STATE THIS rather than proceeding with calculations.";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -1003,9 +1079,9 @@ export default function App() {
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.3</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.4</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Backend Integration • API-Sports via Vercel • Fixed Formulas • Ensemble Modeling • Fantasy Projections
+          Backend Integration • API-Sports via Vercel • Fixed JSON Parsing • Fixed Injury Detection • Ensemble Modeling
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1162,9 +1238,13 @@ export default function App() {
                               ✗ nfelo Model
                             </span>
                           )}
-                          {analysis.dataSourceStatus.injuries && (
+                          {analysis.dataSourceStatus.injuries ? (
+                            <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
+                              ✓ Injuries ({analysis.dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN'})
+                            </span>
+                          ) : (
                             <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
-                              ⚠ Injuries ({analysis.dataSourceStatus.injurySource === 'api-sports' ? 'API-Sports' : 'ESPN'})
+                              ✗ Injuries
                             </span>
                           )}
                           {analysis.dataSourceStatus.enhancedStats && (
@@ -1264,7 +1344,7 @@ export default function App() {
                 )}
 
                 {analysis && analysis.loading && (
-                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating analysis...</div>
+                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating analysis with enhanced JSON parsing...</div>
                 )}
               </div>
             </div>
@@ -1274,7 +1354,7 @@ export default function App() {
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.3: Backend proxied API-Sports • Secure API calls via Vercel • Full data integration • Call 1-800-GAMBLER
+            v2.4: Fixed JSON Parsing • Fixed Injury Detection • Backend proxied API-Sports • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
