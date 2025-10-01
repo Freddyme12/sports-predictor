@@ -13,6 +13,7 @@ export default function App() {
   const [espnDataCache, setEspnDataCache] = useState({});
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
+  const [backendDataCache, setBackendDataCache] = useState({});
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
   const [predictionTracking, setPredictionTracking] = useState([]);
@@ -21,73 +22,7 @@ export default function App() {
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  const systemPrompt = `You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.
-
-## CRITICAL FIXES IMPLEMENTED
-
-**CFB Defensive Success Rate - CORRECTED:**
-- LOWER defensive success rate = BETTER defense
-- Formula: (Away Def Success Rate - Home Def Success Rate) × 180
-- If result is NEGATIVE, HOME has better defense (advantage to home)
-- If result is POSITIVE, AWAY has better defense (advantage to away)
-
-## SPORT DETECTION & METHODOLOGY
-
-**CFB Indicators:** SP+, success_rate, explosiveness, havoc_rate
-**NFL Indicators:** EPA, offensive_line_unit, player_statistics, PFF grades
-
-## COLLEGE FOOTBALL (CFB) PROJECTION - CORRECTED
-
-### CFB Spread Calculation
-
-1. **SP+ Differential** (45% weight): (Home SP+ - Away SP+) × 0.18
-2. **Offensive Success Rate Gap** (22% weight): (Home Off SR - Away Off SR) × 220
-3. **Defensive Success Rate** (18% weight): (Away Def SR - Home Def SR) × 180
-4. **Explosiveness** (10% weight): (Home Exp - Away Exp) × 25
-5. **Havoc Rate** (5% weight): (Home Havoc - Away Havoc) × 120
-6. **Home Field:** +3.5 points
-
-### CFB Total Projection
-Base = [(Home PPG + Away PPG) / 2] × 2 with adjustments for explosiveness and SP+ offense.
-
-## NFL PROJECTION METHODOLOGY
-
-### NFL Spread Calculation
-
-1. **EPA Differential** (40% weight): EPA gap × 320
-2. **Success Rate** (25% weight): Success rate gap × 250
-3. **Explosive Plays** (15% weight): Explosive share gap × 150
-4. **Third Down** (10% weight): 3rd down gap × 100
-5. **Red Zone** (10% weight): RZ TD% gap × 80
-6. **Home Field:** +2.5 points
-7. **O-Line:** Pass block WR diff × 12 + Run block WR diff × 8
-
-### NFL Total Projection
-Base from pace and EPA with adjustments.
-
-## INJURY MODELING
-
-**NFL QB:** 5.5 points, RB: 1.2, WR: 1.0, TE: 0.6
-**CFB QB:** 7.0 points, RB: 2.0, WR: 1.5
-Cluster multipliers apply.
-
-## ENSEMBLE MODELING
-
-Weight as: Model 50%, nfelo 25%, Market 25%
-Consensus within 2pts = +1 confidence
-Disagreement >4pts = -1 confidence
-
-## FANTASY PROJECTIONS (NFL Only)
-
-When player data available, provide:
-- QB: Pass yards, pass TDs, rush yards (4pt pass TD)
-- RB: Rush yards, rush TDs, receptions, rec yards (Full PPR)
-- WR/TE: Targets, receptions, yards, TDs (Full PPR)
-
-Format: Player Name - XX.X pts (Confidence)
-Note: For fantasy/DFS only, not prop betting.
-
-Educational purposes only.`;
+  const systemPrompt = "You are an advanced sports analyst providing rigorous statistical projections with CORRECTED formulas and ensemble modeling.\n\nCFB Defensive Success Rate - CORRECTED: LOWER defensive success rate = BETTER defense.\n\nSPORT DETECTION: CFB has SP+, success_rate. NFL has EPA, player_statistics.\n\nCFB Spread: SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def SR) × 180 × 0.18 + Explosiveness × 25 × 0.10 + Havoc × 120 × 0.05 + Home 3.5\n\nNFL Spread: EPA diff × 320 × 0.40 + Success Rate × 250 × 0.25 + Explosive × 150 × 0.15 + 3rd Down × 100 × 0.10 + Red Zone × 80 × 0.10 + Home 2.5 + O-Line\n\nInjury: NFL QB 5.5pts, RB 1.2, WR 1.0. CFB QB 7.0pts, RB 2.0, WR 1.5.\n\nEnsemble: Model 50%, nfelo 25%, Market 25%. Consensus < 2pts = +1 confidence.\n\nFantasy (NFL): QB pass yds/TDs, rush yds. RB rush/rec. WR/TE targets/rec/yds. Full PPR. For fantasy/DFS only.\n\nEducational purposes only.";
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -96,6 +31,356 @@ Educational purposes only.`;
     { key: "baseball_mlb", title: "MLB" },
     { key: "icehockey_nhl", title: "NHL" },
   ];
+
+  const fetchBackendDataForTeam = async (teamName, sport, year, week) => {
+    try {
+      let endpoint;
+      let params = "?year=" + year + "&week=" + week;
+      
+      if (sport === "americanfootball_nfl") {
+        endpoint = BACKEND_URL + "/api/nfl-enhanced-data";
+        params = "?season=" + year + "&week=" + week;
+      } else if (sport === "americanfootball_ncaaf") {
+        endpoint = BACKEND_URL + "/api/cfb-enhanced-data";
+      } else {
+        return null;
+      }
+      
+      const response = await fetch(endpoint + params);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      if (data.error || !data.games) return null;
+      
+      return data.games;
+    } catch (err) {
+      return null;
+    }
+  };
+
+  const supplementGameDataFromBackend = async (games, sport) => {
+    setBackendFetchStatus('fetching');
+    
+    const currentYear = new Date().getFullYear();
+    const estimatedWeek = 5;
+    
+    try {
+      const backendGames = await fetchBackendDataForTeam(null, sport, currentYear, estimatedWeek);
+      
+      if (!backendGames || backendGames.length === 0) {
+        setBackendFetchStatus('unavailable');
+        return games;
+      }
+      
+      const supplementedGames = games.map(jsonGame => {
+        const matchingBackendGame = backendGames.find(bgGame => {
+          if (!bgGame.home_team || !bgGame.away_team) return false;
+          
+          const normalizeTeam = (name) => (name || '').toLowerCase().replace(/[^a-z]/g, '');
+          const jsonHome = normalizeTeam(jsonGame.home_team);
+          const jsonAway = normalizeTeam(jsonGame.away_team);
+          const bgHome = normalizeTeam(bgGame.home_team);
+          const bgAway = normalizeTeam(bgGame.away_team);
+          
+          return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
+                 (jsonAway.includes(bgAway) || bgAway.includes(jsonAway));
+        });
+        
+        if (matchingBackendGame) {
+          const mergedGameData = Object.assign({}, jsonGame.datasetGame);
+          
+          if (matchingBackendGame.team_data) {
+            mergedGameData.team_data = {
+              home: Object.assign({}, mergedGameData.team_data && mergedGameData.team_data.home || {}, matchingBackendGame.team_data.home),
+              away: Object.assign({}, mergedGameData.team_data && mergedGameData.team_data.away || {}, matchingBackendGame.team_data.away)
+            };
+          }
+          
+          if (matchingBackendGame.player_statistics) {
+            mergedGameData.player_statistics = Object.assign({}, mergedGameData.player_statistics || {}, matchingBackendGame.player_statistics);
+          }
+          
+          return Object.assign({}, jsonGame, {
+            datasetGame: mergedGameData,
+            hasBackendData: true
+          });
+        }
+        
+        return jsonGame;
+      });
+      
+      const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
+      setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
+      
+      return supplementedGames;
+    } catch (err) {
+      setBackendFetchStatus('error');
+      return games;
+    }
+  };
+
+  const fetchNfeloData = async () => {
+    if (selectedSport !== "americanfootball_nfl") {
+      setNfeloAvailable(false);
+      return null;
+    }
+    
+    try {
+      const currentYear = new Date().getFullYear();
+      const currentWeek = 5;
+      
+      const sources = [
+        "https://raw.githubusercontent.com/nfelo/nfelo/main/data/predictions_" + currentYear + "_week" + currentWeek + ".json"
+      ];
+      
+      for (const source of sources) {
+        try {
+          const response = await fetch(source);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && (data.games || data.predictions)) {
+              setNfeloData(data);
+              setNfeloAvailable(true);
+              return data;
+            }
+          }
+        } catch (err) {
+          continue;
+        }
+      }
+      
+      setNfeloAvailable(false);
+      return null;
+    } catch (err) {
+      setNfeloAvailable(false);
+      return null;
+    }
+  };
+
+  const findNfeloPrediction = (game) => {
+    if (!nfeloData || !nfeloAvailable) return null;
+    if (!game.home_team || !game.away_team) return null;
+    
+    const normalizeTeamName = (name) => {
+      return (name || '').toLowerCase().replace(/[^a-z]/g, '');
+    };
+    
+    const gameHome = normalizeTeamName(game.home_team);
+    const gameAway = normalizeTeamName(game.away_team);
+    
+    if (!gameHome || !gameAway) return null;
+    
+    const predictions = nfeloData.games || nfeloData.predictions || [];
+    
+    return predictions.find(pred => {
+      const predHome = normalizeTeamName(pred.home_team || pred.home || '');
+      const predAway = normalizeTeamName(pred.away_team || pred.away || '');
+      
+      return (gameHome.includes(predHome) || predHome.includes(gameHome)) &&
+             (gameAway.includes(predAway) || predAway.includes(gameAway));
+    });
+  };
+
+  const calculateFantasyProjections = (gameData, teamAbbr) => {
+    if (!gameData || !gameData.player_statistics || !gameData.player_statistics[teamAbbr]) {
+      return null;
+    }
+
+    const playerStats = gameData.player_statistics[teamAbbr];
+    const teamStats = gameData.team_statistics ? gameData.team_statistics[teamAbbr] : null;
+    
+    const projections = {
+      quarterbacks: [],
+      runningBacks: [],
+      receivers: []
+    };
+
+    if (playerStats.quarterbacks) {
+      playerStats.quarterbacks.forEach(qb => {
+        if (!qb.attempts || qb.attempts < 20) return;
+        
+        const completionPct = qb.completions / qb.attempts;
+        const yardsPerAttempt = qb.yards / qb.attempts;
+        const tdRate = qb.touchdowns / qb.attempts;
+        
+        const projectedAttempts = qb.attempts / 4;
+        const projectedPassYards = projectedAttempts * yardsPerAttempt;
+        const projectedPassTDs = projectedAttempts * tdRate;
+        const projectedRushYards = qb.carries ? (qb.rush_yards / qb.carries) * 3 : 0;
+        
+        const passingPoints = (projectedPassYards * 0.04) + (projectedPassTDs * 4);
+        const rushingPoints = (projectedRushYards * 0.1) + (0.1 * 6);
+        const totalPoints = passingPoints + rushingPoints;
+        
+        const confidence = qb.passer_rating_last3 > 85 ? 'High' : qb.passer_rating_last3 > 70 ? 'Medium' : 'Low';
+        
+        projections.quarterbacks.push({
+          name: qb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          passYards: projectedPassYards.toFixed(0),
+          passTDs: projectedPassTDs.toFixed(1),
+          confidence: confidence
+        });
+      });
+    }
+
+    if (playerStats.running_backs_top3) {
+      playerStats.running_backs_top3.forEach(rb => {
+        if (!rb.carries || rb.carries < 10) return;
+        
+        const ypc = rb.rush_yards / rb.carries;
+        const carriesPerGame = rb.carries / 4;
+        const projectedRushYards = carriesPerGame * ypc;
+        const projectedRushTDs = (rb.rush_tds / 4) || 0.3;
+        
+        const receptions = rb.receptions || 0;
+        const recYards = rb.yards || 0;
+        const projectedReceptions = receptions / 4;
+        const projectedRecYards = recYards / 4;
+        
+        const rushingPoints = (projectedRushYards * 0.1) + (projectedRushTDs * 6);
+        const receivingPoints = (projectedReceptions * 1) + (projectedRecYards * 0.1) + (0.2 * 6);
+        const totalPoints = rushingPoints + receivingPoints;
+        
+        const confidence = carriesPerGame > 15 ? 'High' : carriesPerGame > 10 ? 'Medium' : 'Low';
+        
+        projections.runningBacks.push({
+          name: rb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
+          receptions: projectedReceptions.toFixed(1),
+          confidence: confidence
+        });
+      });
+    }
+
+    if (playerStats.receivers_tes_top5) {
+      playerStats.receivers_tes_top5.forEach(receiver => {
+        if (!receiver.targets || receiver.targets < 8) return;
+        
+        const targetsPerGame = receiver.targets / 4;
+        const receptionRate = receiver.receptions / receiver.targets;
+        const yardsPerReception = receiver.yards / receiver.receptions;
+        
+        const projectedReceptions = targetsPerGame * receptionRate;
+        const projectedYards = projectedReceptions * yardsPerReception;
+        const projectedTDs = (receiver.touchdowns / 4) || 0.3;
+        
+        const totalPoints = (projectedReceptions * 1) + (projectedYards * 0.1) + (projectedTDs * 6);
+        const confidence = receiver.target_share_pct > 20 ? 'High' : receiver.target_share_pct > 15 ? 'Medium' : 'Low';
+        
+        projections.receivers.push({
+          name: receiver.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          receptions: projectedReceptions.toFixed(1),
+          yards: projectedYards.toFixed(0),
+          touchdowns: projectedTDs.toFixed(1),
+          confidence: confidence
+        });
+      });
+    }
+
+    return projections;
+  };
+
+  const calculateAdvancedFeatures = (gameData) => {
+    if (!gameData) return null;
+
+    if (gameData.team_data) {
+      const home = gameData.team_data.home;
+      const away = gameData.team_data.away;
+      if (!home || !away) return null;
+
+      const hasValidData = home.sp_overall !== undefined || home.off_success_rate !== undefined;
+      if (!hasValidData) return null;
+
+      return {
+        sport: 'CFB',
+        spPlusDiff: (home.sp_overall || 0) - (away.sp_overall || 0),
+        offSuccessRateDiff: (home.off_success_rate || 0) - (away.off_success_rate || 0),
+        defSuccessRateAdvantage: (away.def_success_rate || 0) - (home.def_success_rate || 0),
+        explosivenessDiff: (home.off_explosiveness || 0) - (away.off_explosiveness || 0),
+        havocRateDiff: (home.havoc_rate || 0) - (away.havoc_rate || 0),
+        homePPG: home.points_per_game || 0,
+        awayPPG: away.points_per_game || 0
+      };
+    }
+
+    const teamStats = gameData.team_statistics;
+    if (teamStats) {
+      const homeTeam = gameData.teams && gameData.teams.home;
+      const awayTeam = gameData.teams && gameData.teams.away;
+      const home = teamStats[homeTeam];
+      const away = teamStats[awayTeam];
+      
+      if (!home || !away) return null;
+
+      return {
+        sport: 'NFL',
+        homeEPA: home.offense && home.offense.epa_per_play && home.offense.epa_per_play.overall || 0,
+        awayEPA: away.offense && away.offense.epa_per_play && away.offense.epa_per_play.overall || 0,
+        homeSuccessRate: home.offense && home.offense.success_rate && home.offense.success_rate.overall || 0,
+        awaySuccessRate: away.offense && away.offense.success_rate && away.offense.success_rate.overall || 0
+      };
+    }
+
+    return null;
+  };
+
+  const getTeamAbbreviation = (teamName, sport) => {
+    if (!teamName || typeof teamName !== 'string') return 'unknown';
+    
+    const nflTeams = {
+      'San Francisco 49ers': 'sf', 'Los Angeles Rams': 'lar'
+    };
+
+    if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
+    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
+  };
+
+  const fetchESPNData = async (teamName, sport) => {
+    if (!teamName || typeof teamName !== 'string') {
+      return { team: teamName || 'Unknown', injuries: [], source: 'none' };
+    }
+    
+    try {
+      const sportMap = { 
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
+      
+      const proxyUrl = BACKEND_URL + "/api/espn-proxy?sport=" + encodeURIComponent(sportPath) + "&team=" + encodeURIComponent(teamAbbr);
+      
+      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+
+      if (!response.ok) {
+        return { team: teamName, injuries: [], source: 'failed' };
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        return { team: teamName, injuries: [], source: data.source || 'failed' };
+      }
+      
+      return { 
+        team: teamName, 
+        injuries: data.injuries || [],
+        source: data.source || 'unknown'
+      };
+    } catch (error) {
+      return { 
+        team: teamName, 
+        injuries: [], 
+        source: 'error'
+      };
+    }
+  };
 
   const parseDataset = () => {
     try {
@@ -115,13 +400,17 @@ Educational purposes only.`;
     setGames([]);
 
     try {
-      if (!parsedDataset?.games) {
+      if (!parsedDataset || !parsedDataset.games) {
         setError("Please load a JSON dataset first.");
         setLoading(false);
         return;
       }
 
-      const datasetGames = parsedDataset.games.map((game, index) => {
+      if (selectedSport === "americanfootball_nfl") {
+        await fetchNfeloData();
+      }
+
+      let gamesWithIds = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
         if (game.team_data) {
@@ -129,13 +418,13 @@ Educational purposes only.`;
           awayTeam = game.away_team || 'Unknown Away';
           gameTime = game.date || new Date().toISOString();
         } else {
-          homeTeam = game.teams?.home || game.home_team || 'Unknown Home';
-          awayTeam = game.teams?.away || game.away_team || 'Unknown Away';
+          homeTeam = game.teams && game.teams.home || game.home_team || 'Unknown Home';
+          awayTeam = game.teams && game.teams.away || game.away_team || 'Unknown Away';
           gameTime = game.kickoff_local || game.date || new Date().toISOString();
         }
 
         return {
-          id: game.game_id || `dataset_${index}`,
+          id: game.game_id || ("dataset_" + index),
           sport_key: selectedSport,
           commence_time: gameTime,
           home_team: homeTeam,
@@ -145,7 +434,30 @@ Educational purposes only.`;
         };
       });
 
-      setGames(datasetGames);
+      gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
+      
+      setGames(gamesWithIds);
+
+      for (const game of gamesWithIds) {
+        const hasValidTeams = game.home_team && game.away_team && 
+                             typeof game.home_team === 'string' && 
+                             typeof game.away_team === 'string';
+        
+        if (!hasValidTeams) continue;
+        
+        Promise.all([
+          fetchESPNData(game.home_team, selectedSport),
+          fetchESPNData(game.away_team, selectedSport)
+        ]).then(([homeData, awayData]) => {
+          setEspnDataCache(prev => (Object.assign({}, prev, {
+            [game.id]: { 
+              home: homeData, 
+              away: awayData
+            }
+          })));
+        });
+      }
+
     } catch (err) {
       setError(err.message || "Error loading games");
     } finally {
@@ -154,15 +466,33 @@ Educational purposes only.`;
   };
 
   const analyzeGame = async (game) => {
-    setAnalyses(prev => ({ ...prev, [game.id]: { loading: true } }));
+    setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: true } })));
 
     try {
       const gameData = game.datasetGame;
       if (!gameData) throw new Error("No dataset found");
 
-      let prompt = `Analyze: ${game.away_team} @ ${game.home_team}\n\n`;
-      prompt += `**DATASET:**\n${JSON.stringify(gameData, null, 2)}\n\n`;
-      prompt += `Provide comprehensive analysis with projections.`;
+      const advancedFeatures = calculateAdvancedFeatures(gameData);
+      const isCFB = advancedFeatures && advancedFeatures.sport === 'CFB';
+      const nfeloPrediction = !isCFB ? findNfeloPrediction(game) : null;
+      
+      let fantasyData = null;
+      if (!isCFB && gameData.player_statistics) {
+        const homeTeam = gameData.teams && gameData.teams.home;
+        const awayTeam = gameData.teams && gameData.teams.away;
+        
+        if (homeTeam && awayTeam) {
+          fantasyData = {
+            home: calculateFantasyProjections(gameData, homeTeam),
+            away: calculateFantasyProjections(gameData, awayTeam)
+          };
+        }
+      }
+
+      let prompt = "Analyze: " + game.away_team + " @ " + game.home_team + "\n\n";
+      prompt += "SPORT: " + (isCFB ? 'COLLEGE FOOTBALL' : 'NFL') + "\n\n";
+      prompt += "DATASET:\n" + JSON.stringify(gameData, null, 2) + "\n\n";
+      prompt += "Provide comprehensive analysis with projections and fantasy insights if available.";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -181,14 +511,18 @@ Educational purposes only.`;
       });
 
       const result = await response.json();
-      const analysis = result.choices[0]?.message?.content || "Analysis unavailable";
+      const analysis = result.choices[0] && result.choices[0].message && result.choices[0].message.content || "Analysis unavailable";
 
-      setAnalyses(prev => ({
-        ...prev,
-        [game.id]: { loading: false, text: analysis }
-      }));
+      setAnalyses(prev => (Object.assign({}, prev, {
+        [game.id]: { 
+          loading: false, 
+          text: analysis,
+          fantasyData: fantasyData,
+          nfeloPrediction: nfeloPrediction
+        }
+      })));
     } catch (err) {
-      setAnalyses(prev => ({ ...prev, [game.id]: { loading: false, text: `Error: ${err.message}` } }));
+      setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: false, text: "Error: " + err.message } })));
     }
   };
 
@@ -226,7 +560,7 @@ Educational purposes only.`;
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v2.0</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Fixed Formulas • Ensemble Modeling • Advanced Metrics
+          Fixed Formulas • Ensemble Modeling • Fantasy Projections
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -234,7 +568,7 @@ Educational purposes only.`;
           <textarea
             value={customDataset}
             onChange={(e) => setCustomDataset(e.target.value)}
-            placeholder='Paste JSON dataset...'
+            placeholder="Paste JSON dataset..."
             style={{ width: "100%", minHeight: "150px", padding: "10px", fontFamily: "monospace", fontSize: "12px", marginBottom: "10px", borderRadius: "4px", border: "1px solid #ddd" }}
           />
           <button 
@@ -245,7 +579,7 @@ Educational purposes only.`;
           </button>
           {datasetLoaded && (
             <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>
-              ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games
+              ✓ Dataset Loaded - {parsedDataset && parsedDataset.games && parsedDataset.games.length || 0} games
             </span>
           )}
         </div>
@@ -268,8 +602,16 @@ Educational purposes only.`;
             disabled={loading || !datasetLoaded} 
             style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || !datasetLoaded) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: (loading || !datasetLoaded) ? "not-allowed" : "pointer" }}
           >
-            {loading ? "Loading..." : "Initialize Games"}
+            {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
+
+          {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
+            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px" }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724" }}>
+                ✓ nfelo NFL Model Active
+              </div>
+            </div>
+          )}
         </div>
 
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
@@ -289,21 +631,85 @@ Educational purposes only.`;
                   </div>
                   <button 
                     onClick={() => analyzeGame(game)} 
-                    disabled={analysis?.loading} 
-                    style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: analysis?.loading ? "not-allowed" : "pointer" }}
+                    disabled={analysis && analysis.loading} 
+                    style={{ padding: "8px 16px", backgroundColor: analysis && analysis.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: analysis && analysis.loading ? "not-allowed" : "pointer" }}
                   >
-                    {analysis?.loading ? "Analyzing..." : "Analyze"}
+                    {analysis && analysis.loading ? "Analyzing..." : "Analyze"}
                   </button>
                 </div>
               </div>
 
               <div style={{ padding: "15px" }}>
-                {analysis?.text && (
+                {analysis && analysis.text && (
                   <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                     {analysis.text}
                   </div>
                 )}
-                {analysis?.loading && (
+
+                {analysis && analysis.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
+                  <div style={{ marginTop: "20px", padding: "20px", backgroundColor: "#f0f8ff", borderRadius: "8px", border: "2px solid #0066cc" }}>
+                    <h3 style={{ margin: "0 0 15px 0", color: "#0066cc", fontSize: "18px" }}>
+                      Fantasy Football Projections
+                    </h3>
+                    
+                    {[
+                      { label: game.away_team, data: analysis.fantasyData.away },
+                      { label: game.home_team, data: analysis.fantasyData.home }
+                    ].map(team => {
+                      if (!team.data) return null;
+                      
+                      return (
+                        <div key={team.label} style={{ marginBottom: "20px" }}>
+                          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: "600" }}>
+                            {team.label}
+                          </h4>
+                          
+                          {team.data.quarterbacks && team.data.quarterbacks.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>QBs</div>
+                              {team.data.quarterbacks.map((qb, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{qb.name}</strong> - {qb.projectedPoints} pts ({qb.confidence})
+                                  <div style={{ color: "#666" }}>{qb.passYards} yds, {qb.passTDs} TDs</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.runningBacks && team.data.runningBacks.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>RBs</div>
+                              {team.data.runningBacks.map((rb, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{rb.name}</strong> - {rb.projectedPoints} pts ({rb.confidence})
+                                  <div style={{ color: "#666" }}>{rb.rushYards} rush yds, {rb.receptions} rec</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.receivers && team.data.receivers.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>WR/TE</div>
+                              {team.data.receivers.map((rec, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{rec.name}</strong> - {rec.projectedPoints} pts ({rec.confidence})
+                                  <div style={{ color: "#666" }}>{rec.receptions} rec, {rec.yards} yds, {rec.touchdowns} TDs</div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "11px", color: "#856404" }}>
+                      <strong>Note:</strong> For fantasy/DFS only. Full PPR. 4-game sample. Not for prop betting.
+                    </div>
+                  </div>
+                )}
+
+                {analysis && analysis.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>Generating analysis...</div>
                 )}
               </div>
@@ -314,7 +720,7 @@ Educational purposes only.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v2.0: Fixed CFB defensive bug • EPA integration • Call 1-800-GAMBLER
+            v2.0: Fixed CFB bug • EPA integration • Fantasy projections • Call 1-800-GAMBLER
           </p>
         </div>
       </div>
