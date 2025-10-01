@@ -15,31 +15,12 @@ export default function App() {
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
   const [backendDataCache, setBackendDataCache] = useState({});
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
-  const [backendHealthy, setBackendHealthy] = useState(null);
+  const [injuryApiStatus, setInjuryApiStatus] = useState({ available: null, sources: {} });
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
 
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
-
-  // Backend health check on mount
-  useEffect(() => {
-    const checkBackendHealth = async () => {
-      try {
-        const response = await fetch(
-          `${BACKEND_URL}/api/espn-injuries?sport=football/nfl&team=buf`, 
-          { signal: AbortSignal.timeout(5000) }
-        );
-        const data = await response.json();
-        setBackendHealthy(data.success !== false);
-        console.log('Backend health check:', data.success ? 'healthy' : 'unhealthy');
-      } catch (err) {
-        console.warn('Backend health check failed:', err);
-        setBackendHealthy(false);
-      }
-    };
-    checkBackendHealth();
-  }, []);
 
   const systemPrompt = `You are a sports analyst providing rigorous statistical projections and fantasy football analysis.
 
@@ -830,8 +811,8 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
 
   const fetchESPNData = async (teamName, sport) => {
     if (!teamName || typeof teamName !== 'string' || teamName === 'Unknown Home' || teamName === 'Unknown Away') {
-      console.warn('Skipping ESPN fetch for invalid team name:', teamName);
-      return { team: teamName || 'Unknown', injuries: [], lastUpdated: new Date().toISOString() };
+      console.warn('Skipping injury fetch for invalid team name:', teamName);
+      return { team: teamName || 'Unknown', injuries: [], lastUpdated: new Date().toISOString(), source: 'none' };
     }
     
     try {
@@ -845,41 +826,57 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       const sportPath = sportMap[sport] || 'football/nfl';
       const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : sport.replace('americanfootball_', ''));
       
-      // Use backend proxy instead of direct ESPN API call
-      const proxyUrl = `${BACKEND_URL}/api/espn-injuries?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamAbbr)}`;
+      // Changed to espn-proxy to match your backend file name
+      const proxyUrl = `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamAbbr)}`;
       
       console.log(`Fetching injuries for ${teamName} (${teamAbbr}) via backend...`);
       
       const response = await fetch(proxyUrl, {
-        signal: AbortSignal.timeout(10000) // 10 second timeout
+        signal: AbortSignal.timeout(10000)
       });
 
       if (!response.ok) {
         console.warn(`Backend proxy returned ${response.status} for ${teamName}`);
-        return { team: teamName, injuries: [], lastUpdated: new Date().toISOString() };
+        return { team: teamName, injuries: [], lastUpdated: new Date().toISOString(), source: 'failed' };
       }
 
       const data = await response.json();
       
       if (!data.success) {
         console.warn(`Backend unsuccessful for ${teamName}:`, data.error || data.message);
-        return { team: teamName, injuries: [], lastUpdated: new Date().toISOString() };
+        return { team: teamName, injuries: [], lastUpdated: new Date().toISOString(), source: data.source || 'failed' };
       }
       
-      console.log(`✓ Loaded ${data.count || data.injuries.length} injuries for ${teamName}`);
+      // Track which API source provided the data
+      const source = data.source || 'unknown';
+      const fallbackUsed = data.fallbackUsed || false;
+      
+      console.log(`✓ Loaded ${data.count || data.injuries.length} injuries for ${teamName} from ${source}${fallbackUsed ? ' (fallback)' : ''}`);
+      
+      // Update injury API status tracking
+      setInjuryApiStatus(prev => ({
+        ...prev,
+        sources: {
+          ...prev.sources,
+          [teamName]: { source, fallbackUsed, count: data.count || 0 }
+        }
+      }));
       
       return { 
         team: teamName, 
         injuries: data.injuries || [],
         lastUpdated: data.lastUpdated || new Date().toISOString(),
-        fromBackend: true
+        source: source,
+        fallbackUsed: fallbackUsed,
+        rateLimit: data.rateLimit
       };
     } catch (error) {
-      console.error(`ESPN fetch failed for ${teamName}:`, error.message);
+      console.error(`Injury fetch failed for ${teamName}:`, error.message);
       return { 
         team: teamName, 
         injuries: [], 
         lastUpdated: new Date().toISOString(),
+        source: 'error',
         error: error.message 
       };
     }
@@ -944,6 +941,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
     setError("");
     setGames([]);
     setBackendFetchStatus('idle');
+    setInjuryApiStatus({ available: null, sources: {} });
 
     try {
       if (!parsedDataset || !parsedDataset.games) {
@@ -1043,7 +1041,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       
       setGames(gamesWithIds);
 
-      console.log('=== FETCHING ESPN INJURY DATA ===');
+      console.log('=== FETCHING INJURY DATA (API-Sports + ESPN) ===');
       for (const game of gamesWithIds) {
         const hasValidTeams = game.home_team && 
                              game.away_team && 
@@ -1053,7 +1051,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                              game.away_team !== 'Unknown Away';
         
         if (!hasValidTeams) {
-          console.warn('Skipping ESPN fetch for game with invalid teams:', game.home_team, game.away_team);
+          console.warn('Skipping injury fetch for game with invalid teams:', game.home_team, game.away_team);
           continue;
         }
         
@@ -1069,13 +1067,19 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
               home: homeData, 
               away: awayData, 
               fetchedAt: new Date().toISOString(),
-              status: (homeData?.injuries?.length > 0 || awayData?.injuries?.length > 0) ? 'success' : 'limited'
+              status: (homeData?.injuries?.length > 0 || awayData?.injuries?.length > 0) ? 'success' : 'limited',
+              source: homeData?.source || 'unknown'
             }
           }));
           
-          console.log(`Injuries loaded for ${game.home_team}: ${homeData.injuries.length}, ${game.away_team}: ${awayData.injuries.length}`);
+          console.log(`Injuries loaded for ${game.home_team}: ${homeData.injuries.length} (${homeData.source}), ${game.away_team}: ${awayData.injuries.length} (${awayData.source})`);
+          
+          // Update overall injury API status
+          if (homeData?.source === 'api-sports' || awayData?.source === 'api-sports') {
+            setInjuryApiStatus(prev => ({ ...prev, available: true }));
+          }
         }).catch(err => {
-          console.log('ESPN fetch error for game:', err);
+          console.log('Injury fetch error for game:', err);
         });
       }
 
@@ -1254,7 +1258,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
       <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Sports Analytics & Fantasy System</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          JSON Dataset with Backend API Supplementation + ESPN Injuries + nfelo Integration
+          JSON Dataset + API-Sports/ESPN Injuries + nfelo Integration
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1276,26 +1280,8 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           
           {datasetLoaded && (
             <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>
-              Dataset Loaded - {parsedDataset?.games?.length || 0} games found
+              ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games found
             </span>
-          )}
-
-          {backendHealthy !== null && (
-            <div style={{ 
-              marginTop: "10px", 
-              padding: "10px", 
-              backgroundColor: backendHealthy ? "#d4edda" : "#f8d7da", 
-              borderRadius: "4px", 
-              fontSize: "12px", 
-              color: backendHealthy ? "#155724" : "#721c24",
-              border: `1px solid ${backendHealthy ? "#c3e6cb" : "#f5c6cb"}`
-            }}>
-              {backendHealthy ? (
-                <span><strong>Backend Connected:</strong> ESPN injury proxy operational</span>
-              ) : (
-                <span><strong>Backend Unavailable:</strong> Injury data will be limited. Check backend deployment.</span>
-              )}
-            </div>
           )}
 
           {backendFetchStatus === 'fetching' && (
@@ -1306,26 +1292,24 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           
           {backendFetchStatus === 'success' && (
             <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "12px", color: "#155724" }}>
-              Backend data successfully merged with JSON dataset
+              ✓ Backend data successfully merged with JSON dataset
             </div>
           )}
           
           {backendFetchStatus === 'partial' && (
             <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "12px", color: "#856404" }}>
-              Partial backend data available - some games supplemented
+              ⚠ Partial backend data available - some games supplemented
             </div>
           )}
           
           {backendFetchStatus === 'unavailable' && (
             <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f8d7da", borderRadius: "4px", fontSize: "12px", color: "#721c24" }}>
-              Backend APIs unavailable - using JSON data only
+              ✗ Backend APIs unavailable - using JSON data only
             </div>
           )}
 
           <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#e8f4f8", borderRadius: "6px", fontSize: "12px", color: "#004085" }}>
-            <strong>How it works:</strong> Load your JSON dataset with games and team names. 
-            The system will automatically try to supplement missing data from backend APIs (CFB SP+, NFL EPA, etc.). 
-            ESPN injury data is fetched via backend proxy to avoid CORS issues.
+            <strong>How it works:</strong> System tries API-Sports first (100 req/day), then falls back to ESPN if needed. Both provide injury data automatically.
           </div>
         </div>
 
@@ -1371,7 +1355,17 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
           {nfeloAvailable && selectedSport === "americanfootball_nfl" && (
             <div style={{ marginTop: "15px", padding: "12px", backgroundColor: "#d4edda", borderRadius: "6px", border: "1px solid #c3e6cb" }}>
               <div style={{ fontSize: "14px", fontWeight: "600", color: "#155724" }}>
-                nfelo NFL Model Active - Elo ratings and predictions enabled
+                ✓ nfelo NFL Model Active - Elo ratings and predictions enabled
+              </div>
+            </div>
+          )}
+
+          {injuryApiStatus.available !== null && (
+            <div style={{ marginTop: "15px", padding: "12px", backgroundColor: injuryApiStatus.available ? "#d4edda" : "#fff3cd", borderRadius: "6px", border: `1px solid ${injuryApiStatus.available ? "#c3e6cb" : "#ffeaa7"}` }}>
+              <div style={{ fontSize: "14px", fontWeight: "600", color: injuryApiStatus.available ? "#155724" : "#856404" }}>
+                {injuryApiStatus.available ? 
+                  "✓ API-Sports Active - Using official injury data" : 
+                  "⚠ API-Sports Unavailable - Using ESPN fallback"}
               </div>
             </div>
           )}
@@ -1382,7 +1376,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         {games.length > 0 && (
           <div style={{ backgroundColor: "#e8f4f8", padding: "15px", borderRadius: "8px", marginBottom: "20px", border: "1px solid #b8daff" }}>
             <div style={{ fontSize: "14px", fontWeight: "600", color: "#004085" }}>
-              {games.length} game{games.length !== 1 ? 's' : ''} ready for analysis
+              ✓ {games.length} game{games.length !== 1 ? 's' : ''} ready for analysis
             </div>
           </div>
         )}
@@ -1427,7 +1421,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           color: advancedFeatures.sport === 'CFB' ? "#0c5460" : "#155724",
                           fontWeight: "600"
                         }}>
-                          {advancedFeatures.sport === 'CFB' ? 'CFB SP+' : 'NFL EPA'}
+                          {advancedFeatures.sport === 'CFB' ? '✓ CFB SP+' : '✓ NFL EPA'}
                         </span>
                       )}
                       {nfeloPrediction && (
@@ -1439,7 +1433,20 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           color: "#0066cc",
                           fontWeight: "600"
                         }}>
-                          nfelo Model
+                          ⭐ nfelo Model
+                        </span>
+                      )}
+                      {espnData && espnData.source && (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "3px 8px", 
+                          borderRadius: "12px", 
+                          backgroundColor: espnData.source === 'api-sports' ? "#d4edda" : "#fff3cd",
+                          color: espnData.source === 'api-sports' ? "#155724" : "#856404",
+                          fontWeight: "600"
+                        }}>
+                          {espnData.source === 'api-sports' ? '✓ API-Sports' : 
+                           espnData.source === 'espn' ? '✓ ESPN' : '⚠ Limited'}
                         </span>
                       )}
                       {injuryImpact && injuryImpact.total > 0 && (
@@ -1455,18 +1462,6 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           {injuryImpact.differential !== 0 && ` | ${Math.abs(injuryImpact.differential).toFixed(1)}pt edge`}
                         </span>
                       )}
-                      {espnData && espnData.status === 'success' && (
-                        <span style={{ 
-                          fontSize: "11px", 
-                          padding: "3px 8px", 
-                          borderRadius: "12px", 
-                          backgroundColor: "#d4edda",
-                          color: "#155724",
-                          fontWeight: "600"
-                        }}>
-                          Injuries Loaded
-                        </span>
-                      )}
                       {analysis?.ensemblePrediction?.hasConsensus && (
                         <span style={{ 
                           fontSize: "11px", 
@@ -1476,7 +1471,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                           color: "#155724",
                           fontWeight: "600"
                         }}>
-                          Model Consensus
+                          ✓ Model Consensus
                         </span>
                       )}
                     </div>
@@ -1484,7 +1479,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
                     {espnData && (espnData.home?.injuries?.length > 0 || espnData.away?.injuries?.length > 0) && (
                       <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", border: "1px solid #ffeaa7" }}>
                         <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
-                          Injury Report
+                          Injury Report {espnData.home?.rateLimit && `(API-Sports: ${espnData.home.rateLimit.remaining}/100)`}
                         </div>
                         {espnData.home?.injuries?.length > 0 && (
                           <div style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
@@ -1551,7 +1546,7 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            JSON dataset with backend supplementation, ESPN injuries via proxy, and nfelo Elo. Call 1-800-GAMBLER for help.
+            JSON dataset + API-Sports/ESPN injury proxy + nfelo Elo. Call 1-800-GAMBLER for help.
           </p>
         </div>
       </div>

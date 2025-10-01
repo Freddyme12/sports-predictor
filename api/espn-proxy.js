@@ -1,149 +1,126 @@
-// Vercel serverless function for proxying ESPN injury data
+// Helper to fetch from API-Sports
+async function fetchFromAPISports(sport, team, apiKey) {
+  const sportMap = {
+    'football/nfl': { api: 'american-football', league: '1' },
+    'football/college-football': { api: 'american-football', league: '2' },
+    'basketball/nba': { api: 'basketball', league: '12' },
+    'baseball/mlb': { api: 'baseball', league: '1' },
+    'hockey/nhl': { api: 'hockey', league: '57' }
+  };
+  
+  const sportConfig = sportMap[sport];
+  if (!sportConfig) return null;
+  
+  const url = `https://v1.${sportConfig.api}.api-sports.io/injuries?league=${sportConfig.league}&season=2024&team=${team}`;
+  
+  const response = await fetch(url, {
+    headers: {
+      'x-rapidapi-key': apiKey,
+      'x-rapidapi-host': `v1.${sportConfig.api}.api-sports.io`
+    },
+    signal: AbortSignal.timeout(5000)
+  });
+  
+  if (!response.ok) throw new Error('API-Sports failed');
+  
+  const data = await response.json();
+  const injuries = data.response || [];
+  
+  return injuries.map(injury => ({
+    headline: `${injury.player?.name || 'Player'} (${injury.player?.position || 'Unknown'}) - ${injury.type || 'Injury'}: ${injury.reason || 'Unknown'}`,
+    status: injury.type || 'Unknown',
+    position: injury.player?.position || 'Unknown',
+    name: injury.player?.name || 'Player',
+    type: injury.reason || 'Unknown'
+  }));
+}
+
+// Helper to fetch from ESPN
+async function fetchFromESPN(sport, team) {
+  const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/${sport}/teams/${team}`;
+  
+  const response = await fetch(espnUrl, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'Mozilla/5.0'
+    },
+    signal: AbortSignal.timeout(5000)
+  });
+  
+  if (!response.ok) throw new Error('ESPN failed');
+  
+  const data = await response.json();
+  const injuries = data.team?.injuries || [];
+  
+  return injuries
+    .filter(inj => {
+      const status = (inj.status || '').toLowerCase();
+      return status && !status.includes('out for season');
+    })
+    .map(inj => ({
+      headline: `${inj.athlete?.displayName || 'Player'} (${inj.athlete?.position?.abbreviation || 'Unknown'}) - ${inj.status || 'Unknown'}: ${inj.details?.type || inj.type || 'Injury'}`,
+      status: inj.status || 'Unknown',
+      position: inj.athlete?.position?.abbreviation || 'Unknown',
+      name: inj.athlete?.displayName || 'Player',
+      type: inj.details?.type || inj.type || 'Injury'
+    }));
+}
+
 export default async function handler(req, res) {
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
   
-  // Only allow GET requests
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-  
   const { sport, team } = req.query;
+  const apiSportsKey = process.env.API_SPORTS_KEY;
   
-  // Validate required parameters
   if (!sport || !team) {
     return res.status(400).json({ 
-      error: 'Missing required parameters',
-      success: false,
-      injuries: []
+      error: 'Missing parameters',
+      success: false 
     });
   }
   
-  // Validate sport path format
-  const validSportPaths = [
-    'football/nfl',
-    'football/college-football',
-    'basketball/nba',
-    'basketball/mens-college-basketball',
-    'basketball/wnba',
-    'baseball/mlb',
-    'hockey/nhl'
-  ];
+  let injuries = [];
+  let source = 'none';
+  let error = null;
   
-  if (!validSportPaths.includes(sport)) {
-    return res.status(400).json({
-      error: 'Invalid sport path',
-      success: false,
-      injuries: []
-    });
-  }
-  
-  try {
-    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/${sport}/teams/${team}`;
-    
-    console.log('[ESPN Proxy] Fetching:', espnUrl);
-    
-    const response = await fetch(espnUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (compatible; SportsAnalytics/1.0)'
-      },
-      // Add timeout
-      signal: AbortSignal.timeout(8000)
-    });
-    
-    if (!response.ok) {
-      if (response.status === 404) {
-        console.warn(`[ESPN Proxy] Team not found: ${team} in ${sport}`);
-        return res.status(200).json({ 
-          injuries: [],
-          success: true,
-          message: `Team abbreviation '${team}' not found in ESPN database`,
-          team: team
-        });
-      }
-      
-      throw new Error(`ESPN API returned ${response.status}`);
+  // Try API-Sports first (if key is configured)
+  if (apiSportsKey) {
+    try {
+      injuries = await fetchFromAPISports(sport, team, apiSportsKey);
+      source = 'api-sports';
+      console.log(`[Hybrid] API-Sports returned ${injuries.length} injuries`);
+    } catch (err) {
+      console.warn('[Hybrid] API-Sports failed:', err.message);
+      error = err.message;
     }
-    
-    const data = await response.json();
-    
-    // Multiple possible locations for injury data
-    const injuries = data.team?.injuries || 
-                    data.team?.record?.items?.[0]?.injuries || 
-                    data.injuries ||
-                    [];
-    
-    console.log(`[ESPN Proxy] Found ${injuries.length} raw injuries for ${team}`);
-    
-    // Filter and format injuries
-    const filteredInjuries = injuries
-      .filter(inj => {
-        const status = (inj.status || inj.shortStatus || '').toLowerCase();
-        // Exclude season-ending injuries and healthy players
-        return status && 
-               !status.includes('out for season') && 
-               !status.includes('healthy') &&
-               status !== 'active';
-      })
-      .map(inj => {
-        const athleteName = inj.athlete?.displayName || 
-                           inj.athlete?.fullName || 
-                           inj.longComment || 
-                           'Player';
-        const position = inj.athlete?.position?.abbreviation || 
-                        inj.position || 
-                        'Unknown';
-        const status = inj.status || inj.shortStatus || 'Unknown';
-        const injuryType = inj.details?.type || 
-                          inj.type || 
-                          inj.shortComment || 
-                          'Injury';
-        
-        return {
-          headline: `${athleteName} (${position}) - ${status}: ${injuryType}`,
-          status: status,
-          position: position,
-          name: athleteName,
-          type: injuryType,
-          // Include additional metadata
-          details: inj.details?.detail || inj.longComment || null
-        };
-      });
-    
-    console.log(`[ESPN Proxy] Returning ${filteredInjuries.length} filtered injuries`);
-    
-    return res.status(200).json({ 
-      injuries: filteredInjuries,
-      success: true,
-      team: team,
-      sport: sport,
-      lastUpdated: new Date().toISOString(),
-      count: filteredInjuries.length
-    });
-    
-  } catch (error) {
-    console.error('[ESPN Proxy] Error:', error.message);
-    
-    // Return empty injuries with error info rather than failing completely
-    return res.status(200).json({ 
-      injuries: [],
-      success: false,
-      error: error.message,
-      team: team,
-      sport: sport,
-      lastUpdated: new Date().toISOString()
-    });
   }
+  
+  // Fallback to ESPN if API-Sports failed or returned no data
+  if (injuries.length === 0) {
+    try {
+      injuries = await fetchFromESPN(sport, team);
+      source = 'espn';
+      console.log(`[Hybrid] ESPN returned ${injuries.length} injuries`);
+    } catch (err) {
+      console.warn('[Hybrid] ESPN also failed:', err.message);
+      if (!error) error = err.message;
+    }
+  }
+  
+  return res.status(200).json({
+    injuries: injuries,
+    success: injuries.length > 0 || source !== 'none',
+    source: source,
+    team: team,
+    sport: sport,
+    lastUpdated: new Date().toISOString(),
+    count: injuries.length,
+    fallbackUsed: source === 'espn' && apiSportsKey,
+    error: injuries.length === 0 ? error : null
+  });
 }
-
-// Optional: Add edge runtime for faster responses
-export const config = {
-  runtime: 'edge', // or 'nodejs' if you need Node.js features
-};
