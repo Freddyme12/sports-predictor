@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
-  const { sport, date, season = '2025', team } = req.query;
+  const { sport, date, season = '2024', gameId } = req.query;
   const apiKey = process.env.API_SPORTS_KEY;
   
   if (!apiKey) {
@@ -33,58 +33,45 @@ export default async function handler(req, res) {
   }
   
   try {
-    let gamesUrl = `https://v1.${sportConfig.api}.api-sports.io/games?league=${sportConfig.league}&season=${season}`;
+    let oddsUrl = `https://v1.${sportConfig.api}.api-sports.io/odds?league=${sportConfig.league}&season=${season}`;
     
     if (date) {
-      gamesUrl += `&date=${date}`;
+      oddsUrl += `&date=${date}`;
     }
     
-    if (team) {
-      // Need to lookup team ID first
-      const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?search=${encodeURIComponent(team)}&league=${sportConfig.league}`;
-      const teamResponse = await fetch(teamSearchUrl, {
-        headers: { 'x-apisports-key': apiKey },
-        signal: AbortSignal.timeout(8000)
-      });
-      
-      if (teamResponse.ok) {
-        const teamData = await teamResponse.json();
-        if (teamData.response && teamData.response.length > 0) {
-          const teamId = teamData.response[0].id;
-          gamesUrl += `&team=${teamId}`;
-        }
-      }
+    if (gameId) {
+      oddsUrl += `&game=${gameId}`;
     }
     
-    console.log(`[API-Sports Games] Fetching: ${gamesUrl}`);
+    console.log(`[API-Sports Odds] Fetching: ${oddsUrl}`);
     
-    const gamesResponse = await fetch(gamesUrl, {
+    const oddsResponse = await fetch(oddsUrl, {
       headers: { 'x-apisports-key': apiKey },
       signal: AbortSignal.timeout(8000)
     });
     
-    if (!gamesResponse.ok) {
-      throw new Error(`Games API returned ${gamesResponse.status}`);
+    if (!oddsResponse.ok) {
+      throw new Error(`Odds API returned ${oddsResponse.status}`);
     }
     
-    const gamesData = await gamesResponse.json();
+    const oddsData = await oddsResponse.json();
     
     return res.status(200).json({
-      games: gamesData.response || [],
+      odds: oddsData.response || [],
       success: true,
       source: 'api-sports',
       sport: sport,
       season: season,
       date: date,
-      count: gamesData.response?.length || 0,
+      count: oddsData.response?.length || 0,
       lastUpdated: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('[API-Sports Games] Error:', error.message);
+    console.error('[API-Sports Odds] Error:', error.message);
     
     return res.status(200).json({
-      games: [],
+      odds: [],
       success: false,
       error: error.message,
       source: 'api-sports-failed'

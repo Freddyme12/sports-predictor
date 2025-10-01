@@ -27,7 +27,6 @@ export default async function handler(req, res) {
   }
   
   try {
-    // Map sport format
     const sportMap = {
       'football/nfl': { api: 'american-football', league: '1' },
       'football/college-football': { api: 'american-football', league: '2' },
@@ -46,7 +45,6 @@ export default async function handler(req, res) {
       });
     }
     
-    // Step 1: Get team ID
     const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?search=${encodeURIComponent(team)}&league=${sportConfig.league}`;
     
     const teamResponse = await fetch(teamSearchUrl, {
@@ -70,8 +68,7 @@ export default async function handler(req, res) {
     
     const teamId = teamData.response[0].id;
     
-    // Step 2: Get injuries
-    const injuryUrl = `https://v1.${sportConfig.api}.api-sports.io/injuries?team=${teamId}&season=2025`;
+    const injuryUrl = `https://v1.${sportConfig.api}.api-sports.io/injuries?team=${teamId}&season=2024`;
     
     const injuryResponse = await fetch(injuryUrl, {
       headers: { 'x-apisports-key': apiKey },

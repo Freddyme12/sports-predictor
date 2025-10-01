@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
-  const { sport, team, season = '2025', playerId } = req.query;
+  const { sport, team, season = '2024', playerId } = req.query;
   const apiKey = process.env.API_SPORTS_KEY;
   
   if (!apiKey) {
@@ -33,7 +33,6 @@ export default async function handler(req, res) {
   }
   
   try {
-    // Step 1: Get team ID
     const teamSearchUrl = `https://v1.${sportConfig.api}.api-sports.io/teams?search=${encodeURIComponent(team)}&league=${sportConfig.league}`;
     
     const teamResponse = await fetch(teamSearchUrl, {
@@ -57,7 +56,6 @@ export default async function handler(req, res) {
     
     const teamId = teamData.response[0].id;
     
-    // Step 2: Get player statistics
     let playersUrl = `https://v1.${sportConfig.api}.api-sports.io/players/statistics?league=${sportConfig.league}&season=${season}&team=${teamId}`;
     
     if (playerId) {
