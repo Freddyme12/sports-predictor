@@ -19,8 +19,6 @@ export default function App() {
   const [nfeloData, setNfeloData] = useState(null);
   const [nfeloAvailable, setNfeloAvailable] = useState(false);
   
-  // FIXED: Use empty string for same-origin requests (frontend and backend in same Vercel project)
-  // If your API is in a different project, replace with: "https://your-backend-project.vercel.app"
   const BACKEND_URL = "";
 
   const [showWarning, setShowWarning] = useState(true);
@@ -731,33 +729,34 @@ Educational purposes only. Sports betting is -EV for most bettors.`;
   const fetchESPNData = async (teamName, sport) => {
     try {
       const sportMap = { 
-        'americanfootball_nfl': 'nfl',
-        'americanfootball_ncaaf': 'ncaaf',
-        'basketball_nba': 'nba' 
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba' 
       };
-      const espnSport = sportMap[sport] || 'nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, espnSport === 'ncaaf' ? 'cfb' : espnSport);
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : sport.replace('americanfootball_', ''));
       
-      const sportPath = espnSport === 'nfl' ? 'football/nfl' : 
-                       espnSport === 'ncaaf' ? 'football/college-football' : 
-                       espnSport;
-      
-      const injuryResponse = await fetch(
-        `https://site.api.espn.com/apis/site/v2/sports/${sportPath}/news?limit=50&team=${teamAbbr}`
+      // FIXED: Use backend ESPN proxy
+      const response = await fetch(
+        `${BACKEND_URL}/api/espn-proxy?sport=${sportPath}&team=${teamAbbr}`
       );
 
-      const newsData = injuryResponse.ok ? await injuryResponse.json() : null;
-      const injuries = newsData?.articles?.filter((article) => 
-        article.headline.toLowerCase().includes('injury') || 
-        article.headline.toLowerCase().includes('out') ||
-        article.headline.toLowerCase().includes('questionable') ||
-        article.headline.toLowerCase().includes('doubtful') ||
-        article.headline.toLowerCase().includes('suspended')
-      ).slice(0, 5) || [];
+      if (!response.ok) {
+        console.warn(`ESPN proxy returned ${response.status} for ${teamName}`);
+        return { team: teamName, injuries: [], lastUpdated: new Date().toISOString() };
+      }
 
-      return { team: teamName, injuries, lastUpdated: new Date().toISOString() };
+      const data = await response.json();
+      
+      // Backend returns filtered injuries already
+      return { 
+        team: teamName, 
+        injuries: data.injuries || [],
+        lastUpdated: new Date().toISOString()
+      };
     } catch (error) {
-      return null;
+      console.error('ESPN fetch failed:', error);
+      return { team: teamName, injuries: [], lastUpdated: new Date().toISOString() };
     }
   };
 

@@ -1,30 +1,70 @@
-// api/nfl-enhanced-data.js
 export default async function handler(req, res) {
-  // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
-
+  
   const { season, week } = req.query;
-
+  
   try {
-    // Option 1: Use NFL's official API (limited but free)
-    // Option 2: Scrape Pro Football Reference (legal gray area)
-    // Option 3: Call a Python microservice you set up elsewhere
-    // Option 4: Use paid API like SportsDataIO
+    // Use nflfastR's public schedule data
+    const scheduleUrl = `https://github.com/nflverse/nflverse-data/releases/download/schedules/schedules.rds`;
     
-    // For now, return structure that frontend expects but indicate limited data
-    const response = {
-      games: [],
-      source: 'nfl-limited-data',
-      message: 'Full NFL data requires Python backend or paid API. Consider SportsDataIO or manual dataset.'
-    };
-
-    return res.status(200).json(response);
+    // Alternative: ESPN's NFL API (free, no key needed)
+    const espnUrl = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`;
+    
+    const response = await fetch(espnUrl);
+    
+    if (!response.ok) {
+      throw new Error(`ESPN NFL API error: ${response.status}`);
+    }
+    
+    const espnData = await response.json();
+    
+    // Transform ESPN data to your format
+    const games = espnData.events?.map(event => {
+      const competition = event.competitions?.[0];
+      const homeTeam = competition?.competitors?.find(c => c.homeAway === 'home');
+      const awayTeam = competition?.competitors?.find(c => c.homeAway === 'away');
+      
+      return {
+        game_id: event.id,
+        home_team: homeTeam?.team?.displayName || 'Unknown',
+        away_team: awayTeam?.team?.displayName || 'Unknown',
+        date: event.date,
+        kickoff_local: event.date,
+        teams: {
+          home: homeTeam?.team?.displayName,
+          away: awayTeam?.team?.displayName
+        },
+        // Limited NFL data - EPA would require nflfastR processing
+        epa_stats: {
+          home: {
+            // These would need to be calculated from play-by-play data
+            // For now, return structure frontend expects
+          },
+          away: {}
+        },
+        player_statistics: {},
+        team_statistics: {}
+      };
+    }) || [];
+    
+    return res.status(200).json({ 
+      games,
+      success: true,
+      source: 'espn-nfl-api',
+      note: 'Limited data - full EPA/advanced stats require nflfastR processing or paid API'
+    });
+    
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    console.error('NFL API error:', error);
+    return res.status(500).json({ 
+      games: [],
+      error: true, 
+      message: error.message 
+    });
   }
 }
