@@ -283,6 +283,77 @@ export default function App() {
     return projections;
   };
 
+  const quantifyInjuryImpact = (espnData, isCFB) => {
+    if (!espnData || !espnData.home || !espnData.away) {
+      return { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0 };
+    }
+
+    const cfbImpactScores = {
+      'qb': 7.0, 'quarterback': 7.0,
+      'rb': 2.0, 'running back': 2.0,
+      'wr': 1.5, 'wide receiver': 1.5, 'receiver': 1.5,
+      'te': 1.0, 'tight end': 1.0,
+      'ol': 1.0, 'offensive line': 1.0
+    };
+
+    const nflImpactScores = {
+      'qb': 5.5, 'quarterback': 5.5,
+      'rb': 1.2, 'running back': 1.2,
+      'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0,
+      'te': 0.6, 'tight end': 0.6,
+      'ol': 0.5, 'offensive line': 0.5
+    };
+
+    const impactScores = isCFB ? cfbImpactScores : nflImpactScores;
+
+    const calculateInjuries = (injuries) => {
+      const positionCount = {};
+      let totalImpact = 0;
+
+      injuries.forEach(inj => {
+        const headline = inj.headline.toLowerCase();
+        let impact = 0;
+        let severity = headline.includes('out') ? 1.0 : 
+                      headline.includes('doubtful') ? 0.8 : 
+                      headline.includes('questionable') ? 0.4 : 0.5;
+
+        for (const pos in impactScores) {
+          if (headline.includes(pos)) {
+            impact = Math.max(impact, impactScores[pos]);
+            positionCount[pos] = (positionCount[pos] || 0) + 1;
+            break;
+          }
+        }
+
+        totalImpact += (impact * severity);
+      });
+
+      for (const pos in positionCount) {
+        const count = positionCount[pos];
+        if (count >= 2 && pos !== 'qb') {
+          totalImpact *= (1 + (count - 1) * 0.3);
+        }
+      }
+
+      if (injuries.length >= 4) {
+        totalImpact += 1.0;
+      }
+
+      return totalImpact;
+    };
+
+    const homeImpact = calculateInjuries(espnData.home.injuries || []);
+    const awayImpact = calculateInjuries(espnData.away.injuries || []);
+
+    return {
+      home: homeImpact,
+      away: awayImpact,
+      total: homeImpact + awayImpact,
+      differential: homeImpact - awayImpact,
+      confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 3.5), 2)
+    };
+  };
+
   const calculateAdvancedFeatures = (gameData) => {
     if (!gameData) return null;
 
