@@ -15,6 +15,7 @@ export default function App() {
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [apiSportsKey, setApiSportsKey] = useState("");
   const [debugLog, setDebugLog] = useState([]);
+  const [manualInjuryScores, setManualInjuryScores] = useState({});
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
   const [showWarning, setShowWarning] = useState(true);
@@ -671,7 +672,37 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
   const compileAllGameData = (game, gameData, espnData, marketData, fantasyData) => {
     const isCFB = gameData.team_data !== undefined;
     
-    const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
+    // Check for manual injury scores first, fallback to automated calculation
+    const manualScores = manualInjuryScores[game.id];
+    let injuryImpact = null;
+    
+    if (manualScores && (manualScores.home !== undefined || manualScores.away !== undefined)) {
+      // Use manual scores
+      const homeImpact = parseFloat(manualScores.home) || 0;
+      const awayImpact = parseFloat(manualScores.away) || 0;
+      
+      injuryImpact = {
+        home: homeImpact,
+        away: awayImpact,
+        total: homeImpact + awayImpact,
+        differential: homeImpact - awayImpact,
+        confidenceReduction: Math.min(Math.floor((homeImpact + awayImpact) / 4), 2),
+        details: {
+          manual: true,
+          notes: manualScores.notes || "Manual injury scoring applied"
+        }
+      };
+      
+      addDebugLog('✓ Manual injury scores applied', {
+        game: `${game.away_team} @ ${game.home_team}`,
+        home: homeImpact,
+        away: awayImpact,
+        differential: homeImpact - awayImpact
+      });
+    } else {
+      // Fallback to automated calculation
+      injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
+    }
     
     const compiled = {
       sport: isCFB ? 'CFB' : 'NFL',
@@ -683,8 +714,10 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
       team_statistics: {},
       injuries: {
         available: !!(espnData && espnData.home && espnData.away && 
-                     (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
-        source: espnData?.home?.source || 'none',
+                     (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)) || 
+                   !!(manualScores && (manualScores.home !== undefined || manualScores.away !== undefined)),
+        source: manualScores && (manualScores.home !== undefined || manualScores.away !== undefined) ? 'manual' : (espnData?.home?.source || 'none'),
+        method: injuryImpact?.details?.manual ? 'manual' : 'automated',
         home_impact_points: injuryImpact?.home || 0,
         away_impact_points: injuryImpact?.away || 0,
         net_differential_points: injuryImpact?.differential || 0,
@@ -694,7 +727,8 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         home_injuries: espnData?.home?.injuries || [],
         away_injuries: espnData?.away?.injuries || [],
         home_injury_details: injuryImpact?.details?.home || [],
-        away_injury_details: injuryImpact?.details?.away || []
+        away_injury_details: injuryImpact?.details?.away || [],
+        manual_notes: injuryImpact?.details?.manual ? (manualScores?.notes || "Manual scoring applied") : null
       },
       market_odds: null,
       fantasy_projections: fantasyData,
@@ -702,7 +736,8 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         dataset_available: true,
         backend_enhanced: !!game.hasBackendData,
         injury_data_available: !!(espnData && espnData.home && espnData.away && 
-                                   (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
+                                   (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)) || 
+                               !!(manualScores && (manualScores.home !== undefined || manualScores.away !== undefined)),
         market_odds_available: false
       }
     };
@@ -1205,9 +1240,9 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.2</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.3</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Deep Analysis | API-Sports Injuries | Enhanced Prompting
+          Deep Analysis | Manual Injury Input | Enhanced Prompting
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1321,6 +1356,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
 
         {games.map(game => {
           const analysis = analyses[game.id];
+          const manualScores = manualInjuryScores[game.id] || {};
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -1339,6 +1375,115 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                   >
                     {analysis?.loading ? "Analyzing..." : "Analyze"}
                   </button>
+                </div>
+                
+                {/* Manual Injury Input Section */}
+                <div style={{ marginTop: "15px", padding: "15px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "10px", color: "#856404" }}>
+                    📋 Manual Injury Impact Scoring (Optional)
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#856404", marginBottom: "12px" }}>
+                    Input injury point values manually for precise control. Leave blank for automated calculation.
+                    <br /><strong>Guidelines:</strong> QB (4-8 pts), Skill (1-3 pts), OL/Defense (0.5-2 pts)
+                  </div>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "10px", alignItems: "end" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        {game.away_team} Injury Impact
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="20"
+                        value={manualScores.away || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], away: e.target.value }
+                        }))}
+                        placeholder="0.0"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        {game.home_team} Injury Impact
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="20"
+                        value={manualScores.home || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], home: e.target.value }
+                        }))}
+                        placeholder="0.0"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={manualScores.notes || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], notes: e.target.value }
+                        }))}
+                        placeholder="e.g., Starting QB out, backup solid"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                  </div>
+                  
+                  {(manualScores.home || manualScores.away) && (
+                    <div style={{ marginTop: "8px", padding: "8px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "11px", color: "#155724" }}>
+                      <strong>Manual scoring active:</strong> 
+                      {manualScores.away && ` ${game.away_team}: ${manualScores.away} pts`}
+                      {manualScores.home && ` ${game.home_team}: ${manualScores.home} pts`}
+                      {(parseFloat(manualScores.home || 0) - parseFloat(manualScores.away || 0)) !== 0 && 
+                        ` (Net: ${(parseFloat(manualScores.home || 0) - parseFloat(manualScores.away || 0)).toFixed(1)} pt edge)`
+                      }
+                    </div>
+                  )}
+                  
+                  <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => setManualInjuryScores(prev => {
+                        const newScores = { ...prev };
+                        delete newScores[game.id];
+                        return newScores;
+                      })}
+                      style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "3px", cursor: "pointer" }}
+                    >
+                      Clear Manual Scores
+                    </button>
+                    
+                    <button
+                      onClick={() => {
+                        // Quick-fill common values
+                        setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { 
+                            ...prev[game.id], 
+                            home: "1.5", 
+                            away: "1.0",
+                            notes: "Typical injury load" 
+                          }
+                        }));
+                      }}
+                      style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "#17a2b8", color: "white", border: "none", borderRadius: "3px", cursor: "pointer" }}
+                    >
+                      Sample Values
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1362,8 +1507,20 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                         </span>
                       )}
                       {analysis.compiledData.data_quality.injury_data_available ? (
-                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
-                          ✓ Injuries ({analysis.compiledData.injuries.source}) - {analysis.compiledData.injuries.home_injury_count + analysis.compiledData.injuries.away_injury_count} total
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "4px 8px", 
+                          backgroundColor: analysis.compiledData.injuries.method === 'manual' ? "#e7f3ff" : "#d4edda", 
+                          color: analysis.compiledData.injuries.method === 'manual' ? "#0056b3" : "#155724", 
+                          borderRadius: "4px", 
+                          fontWeight: "600" 
+                        }}>
+                          {analysis.compiledData.injuries.method === 'manual' ? '📋 Manual Injury Scores' : '✓ Auto Injury Data'} 
+                          ({analysis.compiledData.injuries.source}) - 
+                          {analysis.compiledData.injuries.method === 'manual' 
+                            ? ` ${analysis.compiledData.injuries.net_differential_points.toFixed(1)} pt differential`
+                            : ` ${analysis.compiledData.injuries.home_injury_count + analysis.compiledData.injuries.away_injury_count} total`
+                          }
                         </span>
                       ) : (
                         <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
@@ -1477,7 +1634,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.2: Deep Analysis + API-Sports Injuries | Call 1-800-GAMBLER
+            v3.3: Manual Injury Input + Deep Analysis | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
