@@ -376,37 +376,40 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
 
     try {
       const resolved = resolveTeamName(teamName, 'nfl');
-      const teamToFetch = resolved.abbr || teamName;
+      const teamAbbr = resolved.abbr || teamName;
       
-      const sportMap = {
-        'americanfootball_nfl': 'football/nfl',
-        'americanfootball_ncaaf': 'football/college-football',
-        'basketball_nba': 'basketball/nba',
-        'baseball_mlb': 'baseball/mlb',
-        'icehockey_nhl': 'hockey/nhl'
-      };
-      
-      const sportPath = sportMap[sport] || 'football/nfl';
-      addDebugLog('🔄 Fetching API-Sports injuries...', { team: teamToFetch, resolved: resolved.abbr });
+      addDebugLog('🔄 Fetching API-Sports injuries...', { team: teamAbbr, original: teamName });
       
       const response = await fetch(
-        `${BACKEND_URL}/api/apisports-injuries?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamToFetch)}`,
+        `${BACKEND_URL}/api/apisports-injuries?team=${encodeURIComponent(teamAbbr)}&league=nfl`,
         {
           headers: {
-            'x-api-key': apiSportsKey
-          }
+            'x-rapidapi-key': apiSportsKey
+          },
+          signal: AbortSignal.timeout(15000)
         }
       );
 
       if (!response.ok) {
-        addDebugLog('❌ API-Sports injury fetch failed', { team: teamName, status: response.status });
+        const errorText = await response.text();
+        addDebugLog('❌ API-Sports injury fetch failed', { 
+          team: teamName, 
+          status: response.status,
+          error: errorText.substring(0, 100)
+        });
         return { team: teamName, injuries: [], source: 'api-error' };
       }
 
       const data = await response.json();
       
       if (data.success && data.injuries && data.injuries.length > 0) {
-        addDebugLog('✓ API-Sports injuries fetched', { team: teamName, count: data.injuries.length });
+        addDebugLog('✓ API-Sports injuries fetched', { 
+          team: teamName, 
+          count: data.injuries.length,
+          teamId: data.teamId,
+          firstInjury: data.injuries[0]?.headline
+        });
+        
         return {
           team: teamName,
           injuries: data.injuries.map(inj => ({
@@ -414,16 +417,25 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
             player_name: inj.player_name,
             position: inj.position,
             status: inj.status,
-            description: inj.description
+            description: inj.description || inj.reason
           })),
           source: 'api-sports'
         };
       }
 
-      addDebugLog('⚠️ No API-Sports injury data', { team: teamName });
-      return { team: teamName, injuries: [], source: 'no-data' };
+      addDebugLog('⚠️ No API-Sports injury data returned', { 
+        team: teamName,
+        success: data.success,
+        count: data.count,
+        error: data.error
+      });
+      return { team: teamName, injuries: [], source: data.success === false ? 'api-error' : 'no-data' };
     } catch (error) {
-      addDebugLog('❌ API-Sports injury error', { team: teamName, error: error.message });
+      addDebugLog('❌ API-Sports injury error', { 
+        team: teamName, 
+        error: error.message,
+        stack: error.stack?.substring(0, 200)
+      });
       return { team: teamName, injuries: [], source: 'error' };
     }
   };
@@ -1195,7 +1207,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.2</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Deep Analysis | Advanced Injuries | Enhanced Prompting
+          Deep Analysis | API-Sports Injuries | Enhanced Prompting
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1237,7 +1249,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
               type="password"
               value={apiSportsKey}
               onChange={(e) => setApiSportsKey(e.target.value)}
-              placeholder="API-Sports Key (recommended for injuries)"
+              placeholder="API-Sports Key (required for injuries)"
               style={{ width: "100%", padding: "8px", border: "2px solid #4caf50", borderRadius: "4px", marginBottom: "8px" }}
             />
             {apiSportsKey && (
@@ -1465,7 +1477,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.2: Deep Analysis + Advanced Injuries | Call 1-800-GAMBLER
+            v3.2: Deep Analysis + API-Sports Injuries | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
