@@ -55,7 +55,7 @@ export default async function handler(req, res) {
   
   try {
     // API-Sports NFL injuries endpoint
-    const url = `https://v1.american-football.api-sports.io/injuries?league=1&season=2024&team=${teamId}`;
+    const url = `https://v1.american-football.api-sports.io/injuries?team=${teamId}`;
     
     console.log(`[API-Sports] Fetching injuries for ${team} (ID: ${teamId})`);
     
