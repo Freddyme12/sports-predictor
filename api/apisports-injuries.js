@@ -1,5 +1,3 @@
-// api/apisports-injuries.js
-
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -9,13 +7,15 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
   
-  const { team, league } = req.query;
+  const { team } = req.query;
   
-  // Accept API key from frontend header OR use environment variable as fallback
+  // Get API key from header OR environment variable
   const apiKey = req.headers['x-rapidapi-key'] || process.env.API_SPORTS_KEY;
   
+  console.log('[DEBUG] API Key present:', !!apiKey); // Don't log the actual key
+  
   if (!apiKey) {
-    return res.status(500).json({ 
+    return res.status(401).json({ 
       error: 'API_SPORTS_KEY not configured',
       success: false 
     });
@@ -28,7 +28,6 @@ export default async function handler(req, res) {
     });
   }
   
-  // NFL Team Abbreviation to API-Sports ID mapping
   const NFL_TEAM_IDS = {
     'ARI': 11, 'ATL': 8, 'BAL': 5, 'BUF': 20,
     'CAR': 19, 'CHI': 16, 'CIN': 10, 'CLE': 9,
@@ -43,66 +42,67 @@ export default async function handler(req, res) {
   const teamId = NFL_TEAM_IDS[team.toUpperCase()];
   
   if (!teamId) {
-    console.log(`[API-Sports] Unknown team abbreviation: ${team}`);
     return res.status(200).json({
       injuries: [],
       success: true,
-      source: 'api-sports',
       team: team,
-      message: 'Unknown team abbreviation'
+      message: 'Unknown team'
     });
   }
   
   try {
-    // API-Sports NFL injuries endpoint
     const url = `https://v1.american-football.api-sports.io/injuries?team=${teamId}`;
     
-    console.log(`[API-Sports] Fetching injuries for ${team} (ID: ${teamId})`);
+    console.log(`[API-Sports] Fetching: ${url}`);
+    console.log(`[API-Sports] Team ID: ${teamId}`);
     
     const response = await fetch(url, {
+      method: 'GET',
       headers: {
-        'x-rapidapi-key': apiKey,
-        'x-rapidapi-host': 'v1.american-football.api-sports.io'
-      },
-      signal: AbortSignal.timeout(10000)
+        'x-rapidapi-host': 'v1.american-football.api-sports.io',
+        'x-rapidapi-key': apiKey  // Make sure this is being passed!
+      }
     });
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[API-Sports] Error ${response.status}:`, errorText);
+      console.error(`[API-Sports] HTTP Error ${response.status}:`, errorText);
       throw new Error(`API-Sports returned ${response.status}`);
     }
     
     const data = await response.json();
     
-    console.log(`[API-Sports] Raw response:`, JSON.stringify(data).substring(0, 200));
+    console.log(`[API-Sports] Response:`, JSON.stringify(data).substring(0, 200));
     
-    const injuries = data.response || [];
+    if (data.errors && Object.keys(data.errors).length > 0) {
+      console.error('[API-Sports] API Errors:', data.errors);
+      return res.status(200).json({
+        injuries: [],
+        success: false,
+        error: 'API-Sports returned errors',
+        details: data.errors,
+        team: team
+      });
+    }
     
-    // Format injuries to match expected structure
-    const formattedInjuries = injuries.map(injury => ({
-      headline: `${injury.player?.name || 'Player'} (${injury.player?.position || 'N/A'}) - ${injury.type || 'Injury'}`,
+    const injuries = (data.response || []).map(injury => ({
+      headline: `${injury.player?.name || 'Unknown'} (${injury.player?.position || 'N/A'}) - ${injury.status || 'Unknown'}`,
       player_name: injury.player?.name,
       position: injury.player?.position,
-      status: injury.type || 'Unknown',
-      description: injury.reason || injury.description,
-      reason: injury.reason
+      status: injury.status,
+      description: injury.description
     }));
     
-    console.log(`[API-Sports] Returning ${formattedInjuries.length} injuries for ${team}`);
+    console.log(`[API-Sports] Returning ${injuries.length} injuries`);
     
     return res.status(200).json({
-      injuries: formattedInjuries,
+      injuries: injuries,
       success: true,
       source: 'api-sports',
       team: team,
       teamId: teamId,
-      count: formattedInjuries.length,
-      timestamp: new Date().toISOString(),
-      rateLimit: {
-        remaining: response.headers.get('x-ratelimit-requests-remaining'),
-        limit: response.headers.get('x-ratelimit-requests-limit')
-      }
+      count: injuries.length,
+      timestamp: new Date().toISOString()
     });
     
   } catch (error) {
@@ -112,7 +112,6 @@ export default async function handler(req, res) {
       injuries: [],
       success: false,
       error: error.message,
-      source: 'api-sports-error',
       team: team
     });
   }
