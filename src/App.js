@@ -20,7 +20,6 @@ export default function App() {
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  // Team Name Resolver System
   const TEAM_RESOLVER = {
     nfl: {
       'SF': ['San Francisco 49ers', 'San Francisco', '49ers', 'SF', 'SFO'],
@@ -120,37 +119,114 @@ export default function App() {
     return fallbackMatch;
   };
 
-  const systemPrompt = `You are an advanced sports analyst. You receive pre-compiled data with all values already extracted and verified.
+  const systemPrompt = `You are an elite sports analyst with expertise in advanced metrics, situational analysis, and predictive modeling.
 
-=== YOUR JOB ===
-Analyze the game using the compiled statistics provided. All data extraction has already been done - you just need to apply formulas and provide analysis.
+=== YOUR ROLE ===
+Provide comprehensive, data-driven analysis that goes beyond surface statistics. You receive fully compiled data - your job is sophisticated interpretation and prediction.
+
+=== ANALYSIS FRAMEWORK ===
+
+**Statistical Analysis:**
+- Identify statistical edges and their reliability
+- Compare current form vs season-long trends
+- Highlight outliers and regression candidates
+- Assess situational strengths/weaknesses
+
+**Advanced Metrics (NFL):**
+- EPA: Offensive efficiency, league avg ~0.0
+- Success Rate: Play consistency, target >48%
+- Explosive Plays: Big play ability, >8% is elite
+- Pass Protection: Critical for passing efficiency
+- 3rd Down: Sustaining drives, >42% is strong
+- Red Zone: Finishing drives, >55% TD rate ideal
+
+**Injury Impact Analysis:**
+- QB injuries: Massive impact (4-7 point swing)
+- OL injuries: Affects pass/run game significantly
+- Multiple injuries at same position: Depth concerns
+- Questionable players: Discount by 50% impact
+- OUT players: Full impact calculation applied
+
+**Contextual Factors:**
+- Rest days (short week, extra rest)
+- Travel distance and time zones
+- Weather conditions
+- Division rivalry intensity
+- Playoff implications
 
 === FORMULAS ===
-CFB Spread:
+
+**NFL Spread:**
+EPA diff × 320 × 0.40 + Success Rate diff × 250 × 0.25 + Explosive diff × 150 × 0.15 + 3rd Down diff × 100 × 0.10 + Red Zone diff × 80 × 0.10 + Home 2.5 + O-Line adjustment
+
+**CFB Spread:**
 SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def SR) × 180 × 0.18 + Explosiveness × 25 × 0.10 + Havoc × 120 × 0.05 + Home 3.5
 
-NFL Spread:
-EPA diff × 320 × 0.40 + Success Rate diff × 250 × 0.25 + Explosive diff × 150 × 0.15 + 3rd Down diff × 100 × 0.10 + Red Zone diff × 80 × 0.10 + Home 2.5 + O-Line
-
-Injury Impact: Already calculated and provided in points
+**Injury adjustments are pre-calculated and provided in the data.**
 
 === ENSEMBLE WEIGHTING ===
-- If Market available: Model 67%, Market 33%
-- If Market unavailable: Model 100% (reduce confidence by 1 tier)
-- Consensus < 2pts difference = +1 confidence tier
+- Market available: Model 67%, Market 33%
+- No market: Model 100%, reduce confidence 1 tier
+- Consensus within 2 pts: Increase confidence 1 tier
+- Large divergence (>7 pts): Flag for review
 
-=== OUTPUT FORMAT ===
-1. Data Source Summary
-2. Statistical Breakdown (show the actual numbers you're using)
-3. Model Calculation (show each step with numbers)
-4. Injury Adjustment (if applicable)
-5. Market Comparison (if available)
-6. Final Ensemble Prediction
-7. Confidence Level (1-5 stars, adjusted for data availability)
-8. Key Factors
-9. Betting Recommendation (educational context only)
+=== OUTPUT STRUCTURE ===
 
-Always show your math. Educational purposes only - not investment advice.`;
+**1. Executive Summary**
+- Model prediction with confidence
+- Key statistical edges
+- Critical injury impacts
+- Top 2-3 decision factors
+
+**2. Deep Statistical Breakdown**
+- Show all numbers and differentials
+- Identify strengths/weaknesses per team
+- Flag unusual patterns or outliers
+- Compare to league averages where relevant
+
+**3. Detailed Model Calculation**
+- Every formula component with actual values
+- Step-by-step math (must be transparent)
+- Injury point adjustments explained
+- Final model spread
+
+**4. Injury Report Impact**
+- List significant injuries with point impacts
+- Explain why each injury matters
+- Total differential calculation
+- Confidence adjustment
+
+**5. Market Analysis** (if available)
+- Market spread vs model
+- Explain any divergence
+- Ensemble final number
+- Value assessment
+
+**6. Situational Analysis**
+- Rest/travel/weather factors
+- Recent form and trends
+- Head-to-head history relevance
+- Motivation/stakes
+
+**7. Risk Assessment**
+- Data quality concerns
+- Key uncertainties
+- Variance factors
+- Confidence reasoning
+
+**8. Betting Recommendation**
+- Clear actionable guidance
+- Unit sizing suggestion (1-5 units based on edge)
+- Alternative bet considerations
+- Educational context disclaimer
+
+**CRITICAL REQUIREMENTS:**
+- Show ALL math explicitly
+- Never round until final answer
+- Cite actual data values used
+- Explain your reasoning
+- Be honest about limitations
+- Educational purposes only`;
 
   const sports = [
     { key: "americanfootball_nfl", title: "NFL" },
@@ -294,6 +370,7 @@ Always show your math. Educational purposes only - not investment advice.`;
 
   const fetchApiSportsInjuries = async (teamName, sport) => {
     if (!apiSportsKey || !teamName) {
+      addDebugLog('⚠️ No API-Sports key for injuries', { teamName });
       return { team: teamName, injuries: [], source: 'no-key' };
     }
 
@@ -310,37 +387,43 @@ Always show your math. Educational purposes only - not investment advice.`;
       };
       
       const sportPath = sportMap[sport] || 'football/nfl';
-      addDebugLog('🔄 Fetching injuries...', { team: teamToFetch, resolved: resolved.abbr });
+      addDebugLog('🔄 Fetching API-Sports injuries...', { team: teamToFetch, resolved: resolved.abbr });
       
       const response = await fetch(
-        `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamToFetch)}`,
+        `${BACKEND_URL}/api/apisports-injuries?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamToFetch)}`,
         {
-          headers: apiSportsKey ? { 'x-api-key': apiSportsKey } : {}
+          headers: {
+            'x-api-key': apiSportsKey
+          }
         }
       );
 
       if (!response.ok) {
-        addDebugLog('❌ Injury fetch failed', { team: teamName, status: response.status });
+        addDebugLog('❌ API-Sports injury fetch failed', { team: teamName, status: response.status });
         return { team: teamName, injuries: [], source: 'api-error' };
       }
 
       const data = await response.json();
       
-      if (data.success && data.injuries) {
-        addDebugLog('✓ Injuries fetched', { team: teamName, count: data.injuries.length });
+      if (data.success && data.injuries && data.injuries.length > 0) {
+        addDebugLog('✓ API-Sports injuries fetched', { team: teamName, count: data.injuries.length });
         return {
           team: teamName,
           injuries: data.injuries.map(inj => ({
-            headline: inj.headline || `${inj.player || 'Unknown'} - ${inj.status || 'Unknown'}`
+            headline: inj.headline || `${inj.player_name || 'Unknown'} - ${inj.status || 'Unknown'}`,
+            player_name: inj.player_name,
+            position: inj.position,
+            status: inj.status,
+            description: inj.description
           })),
-          source: data.source || 'backend'
+          source: 'api-sports'
         };
       }
 
-      addDebugLog('⚠️ No injury data', { team: teamName });
+      addDebugLog('⚠️ No API-Sports injury data', { team: teamName });
       return { team: teamName, injuries: [], source: 'no-data' };
     } catch (error) {
-      addDebugLog('❌ Injury fetch error', { team: teamName, error: error.message });
+      addDebugLog('❌ API-Sports injury error', { team: teamName, error: error.message });
       return { team: teamName, injuries: [], source: 'error' };
     }
   };
@@ -465,7 +548,9 @@ Always show your math. Educational purposes only - not investment advice.`;
       'rb': 2.0, 'running back': 2.0,
       'wr': 1.5, 'wide receiver': 1.5, 'receiver': 1.5,
       'te': 1.0, 'tight end': 1.0,
-      'ol': 1.0, 'offensive line': 1.0
+      'ol': 1.0, 'offensive line': 1.0,
+      'lt': 1.2, 'lg': 0.9, 'c': 1.0, 'rg': 0.9, 'rt': 1.2,
+      'de': 0.8, 'dt': 0.7, 'lb': 0.7, 'cb': 0.8, 's': 0.7, 'safety': 0.7
     };
 
     const nflImpactScores = {
@@ -473,7 +558,9 @@ Always show your math. Educational purposes only - not investment advice.`;
       'rb': 1.2, 'running back': 1.2,
       'wr': 1.0, 'wide receiver': 1.0, 'receiver': 1.0,
       'te': 0.6, 'tight end': 0.6,
-      'ol': 0.5, 'offensive line': 0.5
+      'ol': 0.5, 'offensive line': 0.5,
+      'lt': 0.7, 'lg': 0.4, 'c': 0.5, 'rg': 0.4, 'rt': 0.7,
+      'de': 0.5, 'dt': 0.4, 'lb': 0.4, 'cb': 0.5, 's': 0.4, 'safety': 0.4
     };
 
     const impactScores = isCFB ? cfbImpactScores : nflImpactScores;
@@ -494,7 +581,12 @@ Always show your math. Educational purposes only - not investment advice.`;
           if (headline.includes(pos)) {
             impact = Math.max(impact, impactScores[pos]);
             positionCount[pos] = (positionCount[pos] || 0) + 1;
-            details.push({ headline: inj.headline, impact: impact * severity, position: pos });
+            details.push({ 
+              headline: inj.headline, 
+              impact: impact * severity, 
+              position: pos,
+              severity: severity
+            });
             break;
           }
         }
@@ -578,7 +670,8 @@ Always show your math. Educational purposes only - not investment advice.`;
       },
       team_statistics: {},
       injuries: {
-        available: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
+        available: !!(espnData && espnData.home && espnData.away && 
+                     (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
         source: espnData?.home?.source || 'none',
         home_impact_points: injuryImpact?.home || 0,
         away_impact_points: injuryImpact?.away || 0,
@@ -587,14 +680,17 @@ Always show your math. Educational purposes only - not investment advice.`;
         home_injury_count: espnData?.home?.injuries?.length || 0,
         away_injury_count: espnData?.away?.injuries?.length || 0,
         home_injuries: espnData?.home?.injuries || [],
-        away_injuries: espnData?.away?.injuries || []
+        away_injuries: espnData?.away?.injuries || [],
+        home_injury_details: injuryImpact?.details?.home || [],
+        away_injury_details: injuryImpact?.details?.away || []
       },
       market_odds: null,
       fantasy_projections: fantasyData,
       data_quality: {
         dataset_available: true,
         backend_enhanced: !!game.hasBackendData,
-        injury_data_available: !!(espnData && (espnData.home.source === 'api-sports' || espnData.away.source === 'api-sports')),
+        injury_data_available: !!(espnData && espnData.home && espnData.away && 
+                                   (espnData.home.injuries.length > 0 || espnData.away.injuries.length > 0)),
         market_odds_available: false
       }
     };
@@ -731,26 +827,33 @@ Always show your math. Educational purposes only - not investment advice.`;
       const sportPath = sportMap[sport] || 'football/nfl';
       const teamAbbr = getTeamAbbreviation(teamName, sport);
       
+      addDebugLog('🔄 Fetching ESPN injuries...', { team: teamAbbr });
+      
       const proxyUrl = BACKEND_URL + "/api/espn-proxy?sport=" + encodeURIComponent(sportPath) + "&team=" + encodeURIComponent(teamAbbr);
       
       const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
 
       if (!response.ok) {
+        addDebugLog('❌ ESPN fetch failed', { team: teamName, status: response.status });
         return { team: teamName, injuries: [], source: 'failed' };
       }
 
       const data = await response.json();
       
-      if (!data.success) {
-        return { team: teamName, injuries: [], source: data.source || 'failed' };
+      if (!data.success || !data.injuries || data.injuries.length === 0) {
+        addDebugLog('⚠️ No ESPN injury data', { team: teamName });
+        return { team: teamName, injuries: [], source: data.source || 'no-data' };
       }
+      
+      addDebugLog('✓ ESPN injuries fetched', { team: teamName, count: data.injuries.length });
       
       return { 
         team: teamName, 
         injuries: data.injuries || [],
-        source: data.source || 'unknown'
+        source: data.source || 'espn'
       };
     } catch (error) {
+      addDebugLog('❌ ESPN fetch error', { team: teamName, error: error.message });
       return { 
         team: teamName, 
         injuries: [], 
@@ -910,6 +1013,14 @@ Always show your math. Educational purposes only - not investment advice.`;
               away: awayData
             }
           })));
+          
+          addDebugLog('✓ Injury data cached', {
+            game: `${game.away_team} @ ${game.home_team}`,
+            homeSource: homeData.source,
+            awaySource: awayData.source,
+            homeCount: homeData.injuries.length,
+            awayCount: awayData.injuries.length
+          });
         });
       }
 
@@ -930,6 +1041,14 @@ Always show your math. Educational purposes only - not investment advice.`;
       if (!gameData) throw new Error("No dataset found");
 
       const espnData = espnDataCache[game.id];
+      
+      addDebugLog('Injury data check', {
+        available: !!espnData,
+        homeInjuries: espnData?.home?.injuries?.length || 0,
+        awayInjuries: espnData?.away?.injuries?.length || 0,
+        homeSource: espnData?.home?.source,
+        awaySource: espnData?.away?.source
+      });
       
       let marketData = null;
       let hasMarketData = false;
@@ -972,34 +1091,35 @@ Always show your math. Educational purposes only - not investment advice.`;
       addDebugLog('✓ Data compiled', { 
         hasMarket: compiledData.data_quality.market_odds_available,
         hasInjuries: compiledData.data_quality.injury_data_available,
+        injuryDifferential: compiledData.injuries.net_differential_points,
         warnings: dataWarnings.length
       });
 
-      let prompt = "=== COMPILED GAME DATA ===\n";
-      prompt += "All data has been pre-extracted and verified by JavaScript. Use these values directly.\n\n";
+      let prompt = "=== GAME ANALYSIS REQUEST ===\n";
+      prompt += `${game.away_team} @ ${game.home_team}\n\n`;
+      prompt += "=== COMPILED DATA ===\n";
+      prompt += "All statistics pre-extracted and verified. Use these values directly in your analysis.\n\n";
       prompt += JSON.stringify(compiledData, null, 2) + "\n\n";
       
       if (dataWarnings.length > 0) {
-        prompt += "=== DATA QUALITY WARNINGS ===\n";
+        prompt += "=== DATA QUALITY ALERTS ===\n";
         dataWarnings.forEach(warning => {
-          prompt += warning + "\n";
+          prompt += "• " + warning + "\n";
         });
         prompt += "\n";
       }
       
-      prompt += "=== ANALYSIS INSTRUCTIONS ===\n";
-      prompt += "1. Review the compiled data above\n";
-      prompt += "2. Apply the appropriate formula (CFB or NFL) using the provided statistics\n";
-      prompt += "3. Show each calculation step with actual numbers\n";
-      prompt += "4. Apply injury adjustments if injuries.home_impact_points or injuries.away_impact_points > 0\n";
-      prompt += "5. If market_odds available, create ensemble prediction (Model 67%, Market 33%)\n";
-      prompt += "6. If market_odds NOT available, use Model 100% and reduce confidence by 1 tier\n";
-      prompt += "7. Provide final prediction with confidence level (1-5 stars)\n";
-      prompt += "8. List key factors driving the prediction\n";
-      if (dataWarnings.length > 0) {
-        prompt += "9. Address the data quality warnings in your analysis\n";
+      prompt += "=== ANALYSIS REQUIREMENTS ===\n\n";
+      prompt += "Provide a comprehensive analysis following the output structure in your system prompt.\n\n";
+      prompt += "Key focus areas:\n";
+      prompt += "1. Statistical edges - identify who has advantages and why\n";
+      prompt += "2. Injury impact - quantify using the pre-calculated point values\n";
+      if (hasMarketData) {
+        prompt += "3. Market comparison - explain model vs market differences\n";
       }
-      prompt += "\nCRITICAL: Show your math. This is educational analysis only.";
+      prompt += "4. Risk factors - what could invalidate the prediction\n";
+      prompt += "5. Confidence assessment - justify your confidence level\n\n";
+      prompt += "Remember: Show all calculations explicitly. Educational purposes only.\n";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -1073,9 +1193,9 @@ Always show your math. Educational purposes only - not investment advice.`;
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.1</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.2</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Team Resolver | Fixed Data Extraction | Debug Logging | Pure Data-Driven Analysis
+          Deep Analysis | Advanced Injuries | Enhanced Prompting
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1104,10 +1224,10 @@ Always show your math. Educational purposes only - not investment advice.`;
           
           <div style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#e8f5e9", borderRadius: "6px", border: "2px solid #4caf50" }}>
             <div style={{ fontSize: "14px", fontWeight: "600", color: "#2e7d32", marginBottom: "8px" }}>
-              ⭐ RECOMMENDED: API-Sports (All Backend Calls)
+              ⭐ RECOMMENDED: API-Sports (Injuries + Odds + Stats)
             </div>
             <div style={{ fontSize: "12px", color: "#495057", marginBottom: "10px" }}>
-              All API-Sports calls go through your Vercel backend for security!
+              Secure backend proxy for API-Sports integration
               <br />
               Provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Players</strong>, <strong>Stats</strong>
               <br />
@@ -1117,12 +1237,12 @@ Always show your math. Educational purposes only - not investment advice.`;
               type="password"
               value={apiSportsKey}
               onChange={(e) => setApiSportsKey(e.target.value)}
-              placeholder="API-Sports Key (recommended)"
+              placeholder="API-Sports Key (recommended for injuries)"
               style={{ width: "100%", padding: "8px", border: "2px solid #4caf50", borderRadius: "4px", marginBottom: "8px" }}
             />
             {apiSportsKey && (
               <div style={{ fontSize: "11px", color: "#155724", fontWeight: "600" }}>
-                ✓ API-Sports will be used via backend proxy endpoints (secure)
+                ✓ API-Sports enabled - injuries will be fetched automatically
               </div>
             )}
           </div>
@@ -1130,7 +1250,7 @@ Always show your math. Educational purposes only - not investment advice.`;
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px", marginTop: "15px" }}>
             <div>
               <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
-                The Odds API Key (optional - primary odds source)
+                The Odds API Key (optional - market odds)
               </label>
               <input
                 type="password"
@@ -1231,7 +1351,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                       )}
                       {analysis.compiledData.data_quality.injury_data_available ? (
                         <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
-                          ✓ Injuries ({analysis.compiledData.injuries.source})
+                          ✓ Injuries ({analysis.compiledData.injuries.source}) - {analysis.compiledData.injuries.home_injury_count + analysis.compiledData.injuries.away_injury_count} total
                         </span>
                       ) : (
                         <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
@@ -1331,9 +1451,10 @@ Always show your math. Educational purposes only - not investment advice.`;
 
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
-                    <div style={{ marginBottom: "10px" }}>Step 1: Extracting data from JSON...</div>
-                    <div style={{ marginBottom: "10px" }}>Step 2: Compiling all sources...</div>
-                    <div>Step 3: Generating detailed analysis...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 1: Extracting statistics...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 2: Fetching injury reports...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 3: Compiling all data...</div>
+                    <div>Step 4: Generating deep analysis...</div>
                   </div>
                 )}
               </div>
@@ -1344,7 +1465,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.1: Fixed Data Extraction | Call 1-800-GAMBLER
+            v3.2: Deep Analysis + Advanced Injuries | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
