@@ -441,12 +441,14 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
     }
   };
 
-  const calculateFantasyProjections = (gameData, teamAbbr) => {
+  const calculateFantasyProjections = (gameData, teamAbbr, opponentAbbr = null) => {
     if (!gameData || !gameData.player_statistics || !gameData.player_statistics[teamAbbr]) {
       return null;
     }
 
     const playerStats = gameData.player_statistics[teamAbbr];
+    const opponentStats = opponentAbbr ? gameData.team_statistics?.[opponentAbbr] : null;
+    
     const projections = {
       quarterbacks: [],
       runningBacks: [],
@@ -455,6 +457,77 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
 
     const processedPlayers = new Set();
 
+    // Helper function to get opponent defensive adjustment using available EPA/success rate data
+    const getOpponentAdjustment = (statType, opponentStats) => {
+      if (!opponentStats || !opponentStats.defense) return 1.0;
+      
+      const defense = opponentStats.defense;
+      const adjustments = {};
+      
+      // EPA-based adjustments (league average EPA allowed ≈ 0.0)
+      if (statType === 'passing' && defense.epa_per_play_allowed?.pass !== undefined) {
+        // Lower (more negative) EPA allowed = tougher defense = lower projection
+        // EPA range typically -0.3 to +0.2, so we'll scale accordingly
+        const epaPass = defense.epa_per_play_allowed.pass;
+        adjustments.epa_multiplier = Math.max(0.7, Math.min(1.3, 1 + (epaPass / 0.2)));
+      }
+      
+      if (statType === 'rushing' && defense.epa_per_play_allowed?.rush !== undefined) {
+        const epaRush = defense.epa_per_play_allowed.rush;
+        adjustments.epa_multiplier = Math.max(0.7, Math.min(1.3, 1 + (epaRush / 0.15)));
+      }
+      
+      // Success rate adjustments (league average ≈ 45%)
+      if (defense.success_rate_allowed?.overall !== undefined) {
+        const successRate = defense.success_rate_allowed.overall;
+        adjustments.success_multiplier = Math.max(0.8, Math.min(1.2, successRate / 0.45));
+      }
+      
+      // Pressure rate adjustment for QBs
+      if (statType === 'passing' && defense.pressure_rate_generated !== undefined) {
+        const pressureRate = defense.pressure_rate_generated;
+        // League average pressure rate ≈ 25%, higher pressure = lower QB output
+        adjustments.pressure_multiplier = Math.max(0.8, Math.min(1.0, 1 - ((pressureRate - 0.25) * 0.8)));
+      }
+      
+      // Explosive plays allowed (affects ceiling)
+      if (statType === 'passing' && defense.explosive_plays_allowed?.pass !== undefined) {
+        const explosiveAllowed = defense.explosive_plays_allowed.pass;
+        // League average ≈ 5%, higher explosive rate allowed = higher ceiling
+        adjustments.explosive_multiplier = Math.max(0.9, Math.min(1.15, explosiveAllowed / 0.05));
+      }
+      
+      if (statType === 'rushing' && defense.explosive_plays_allowed?.rush !== undefined) {
+        const explosiveAllowed = defense.explosive_plays_allowed.rush;
+        // League average ≈ 3% for rush
+        adjustments.explosive_multiplier = Math.max(0.9, Math.min(1.15, explosiveAllowed / 0.03));
+      }
+      
+      // Combine adjustments (weighted average)
+      let finalMultiplier = 1.0;
+      let weightSum = 0;
+      
+      if (adjustments.epa_multiplier) {
+        finalMultiplier += adjustments.epa_multiplier * 0.4; // EPA is most important
+        weightSum += 0.4;
+      }
+      if (adjustments.success_multiplier) {
+        finalMultiplier += adjustments.success_multiplier * 0.3;
+        weightSum += 0.3;
+      }
+      if (adjustments.pressure_multiplier) {
+        finalMultiplier += adjustments.pressure_multiplier * 0.2;
+        weightSum += 0.2;
+      }
+      if (adjustments.explosive_multiplier) {
+        finalMultiplier += adjustments.explosive_multiplier * 0.1;
+        weightSum += 0.1;
+      }
+      
+      return weightSum > 0 ? (finalMultiplier - 1) / weightSum + 1 : 1.0;
+    };
+
+    // Enhanced QB projections with opponent adjustments
     if (playerStats.quarterbacks) {
       playerStats.quarterbacks.forEach(qb => {
         if (!qb.attempts || qb.attempts < 20) return;
@@ -465,28 +538,57 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         const yardsPerAttempt = qb.yards / qb.attempts;
         const tdRate = qb.touchdowns / qb.attempts;
         
-        const projectedAttempts = qb.attempts / 4;
-        const projectedPassYards = projectedAttempts * yardsPerAttempt;
-        const projectedPassTDs = projectedAttempts * tdRate;
+        // Base projections
+        const baseAttempts = qb.attempts / 4;
+        const basePassYards = baseAttempts * yardsPerAttempt;
+        const basePassTDs = baseAttempts * tdRate;
+        
+        // Apply opponent adjustments
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats);
+        
+        const projectedAttempts = baseAttempts * passAdjustment;
+        const projectedPassYards = basePassYards * passAdjustment;
+        const projectedPassTDs = basePassTDs * passAdjustment;
+        
+        // Rushing projections (less affected by pass defense)
         const projectedRushYards = qb.carries ? (qb.rush_yards / qb.carries) * 3 : 0;
         
         const passingPoints = (projectedPassYards * 0.04) + (projectedPassTDs * 4);
         const rushingPoints = (projectedRushYards * 0.1) + (0.1 * 6);
         const totalPoints = passingPoints + rushingPoints;
         
-        const confidence = qb.passer_rating_last3 > 85 ? 'High' : qb.passer_rating_last3 > 70 ? 'Medium' : 'Low';
+        // Adjust confidence based on matchup difficulty
+        let baseConfidence = qb.passer_rating_last3 > 85 ? 'High' : qb.passer_rating_last3 > 70 ? 'Medium' : 'Low';
+        const matchupFactor = passAdjustment;
         
-        projections.quarterbacks.push({
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
           name: qb.player_name,
           projectedPoints: totalPoints.toFixed(1),
           passYards: projectedPassYards.toFixed(0),
           passTDs: projectedPassTDs.toFixed(1),
           rushYards: projectedRushYards.toFixed(0),
           confidence: confidence
-        });
+        };
+
+        // Add matchup info if opponent data exists
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough matchup' : 'Neutral matchup';
+        }
+        
+        projections.quarterbacks.push(projection);
       });
     }
 
+    // Enhanced RB projections with opponent rush defense
     if (playerStats.running_backs_top3) {
       playerStats.running_backs_top3.forEach(rb => {
         if (!rb.carries || rb.carries < 10) return;
@@ -495,31 +597,56 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         
         const ypc = rb.rush_yards / rb.carries;
         const carriesPerGame = rb.carries / 4;
-        const projectedRushYards = carriesPerGame * ypc;
-        const projectedRushTDs = (rb.rush_tds / 4) || 0.3;
         
+        // Apply opponent rush defense adjustment
+        const rushAdjustment = getOpponentAdjustment('rushing', opponentStats);
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats); // For receiving
+        
+        const projectedRushYards = (carriesPerGame * ypc) * rushAdjustment;
+        const projectedRushTDs = ((rb.rush_tds / 4) || 0.3) * rushAdjustment;
+        
+        // Receiving projections  
         const receptions = rb.receptions || 0;
         const recYards = rb.yards || 0;
-        const projectedReceptions = receptions / 4;
-        const projectedRecYards = recYards / 4;
+        const projectedReceptions = (receptions / 4) * passAdjustment;
+        const projectedRecYards = (recYards / 4) * passAdjustment;
         
         const rushingPoints = (projectedRushYards * 0.1) + (projectedRushTDs * 6);
         const receivingPoints = (projectedReceptions * 1) + (projectedRecYards * 0.1) + (0.2 * 6);
         const totalPoints = rushingPoints + receivingPoints;
         
-        const confidence = carriesPerGame > 15 ? 'High' : carriesPerGame > 10 ? 'Medium' : 'Low';
+        // Adjust confidence based on matchup
+        let baseConfidence = carriesPerGame > 15 ? 'High' : carriesPerGame > 10 ? 'Medium' : 'Low';
+        const matchupFactor = rushAdjustment;
         
-        projections.runningBacks.push({
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
           name: rb.player_name,
           projectedPoints: totalPoints.toFixed(1),
           rushYards: projectedRushYards.toFixed(0),
           receptions: projectedReceptions.toFixed(1),
           recYards: projectedRecYards.toFixed(0),
           confidence: confidence
-        });
+        };
+
+        // Add matchup info if opponent data exists
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable rush matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough rush defense' : 'Neutral matchup';
+        }
+        
+        projections.runningBacks.push(projection);
       });
     }
 
+    // Enhanced WR/TE projections
     if (playerStats.receivers_tes_top5) {
       playerStats.receivers_tes_top5.forEach(receiver => {
         if (!receiver.targets || receiver.targets < 8) return;
@@ -530,21 +657,43 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         const receptionRate = receiver.receptions / receiver.targets;
         const yardsPerReception = receiver.yards / receiver.receptions;
         
-        const projectedReceptions = targetsPerGame * receptionRate;
+        // Apply opponent pass defense adjustment
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats);
+        
+        const projectedReceptions = (targetsPerGame * receptionRate) * passAdjustment;
         const projectedYards = projectedReceptions * yardsPerReception;
-        const projectedTDs = (receiver.touchdowns / 4) || 0.3;
+        const projectedTDs = ((receiver.touchdowns / 4) || 0.3) * passAdjustment;
         
         const totalPoints = (projectedReceptions * 1) + (projectedYards * 0.1) + (projectedTDs * 6);
-        const confidence = receiver.target_share_pct > 20 ? 'High' : receiver.target_share_pct > 15 ? 'Medium' : 'Low';
         
-        projections.receivers.push({
+        // Adjust confidence based on matchup
+        let baseConfidence = receiver.target_share_pct > 20 ? 'High' : receiver.target_share_pct > 15 ? 'Medium' : 'Low';
+        const matchupFactor = passAdjustment;
+        
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
           name: receiver.player_name,
           projectedPoints: totalPoints.toFixed(1),
           receptions: projectedReceptions.toFixed(1),
           yards: projectedYards.toFixed(0),
           touchdowns: projectedTDs.toFixed(1),
           confidence: confidence
-        });
+        };
+
+        // Add matchup info if opponent data exists
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable pass matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough pass defense' : 'Neutral matchup';
+        }
+        
+        projections.receivers.push(projection);
       });
     }
 
@@ -1126,8 +1275,8 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         
         if (homeTeam && awayTeam) {
           fantasyData = {
-            home: calculateFantasyProjections(gameData, homeTeam),
-            away: calculateFantasyProjections(gameData, awayTeam)
+            home: calculateFantasyProjections(gameData, homeTeam, awayTeam),
+            away: calculateFantasyProjections(gameData, awayTeam, homeTeam)
           };
         }
       }
@@ -1240,9 +1389,9 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.3</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.4</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Deep Analysis | Manual Injury Input | Enhanced Prompting
+          Deep Analysis | Manual Injury Input | Opponent-Adjusted Fantasy Projections
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1558,7 +1707,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                 {analysis?.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
                   <div style={{ marginTop: "20px", padding: "20px", backgroundColor: "#f0f8ff", borderRadius: "8px", border: "2px solid #0066cc" }}>
                     <h3 style={{ margin: "0 0 15px 0", color: "#0066cc", fontSize: "18px" }}>
-                      Fantasy Football Projections
+                      Fantasy Football Projections (Opponent Adjusted)
                     </h3>
                     
                     {[
@@ -1579,7 +1728,15 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                               {team.data.quarterbacks.map((qb, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{qb.name}</strong> - {qb.projectedPoints} pts ({qb.confidence})
+                                  {qb.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(qb.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(qb.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{qb.matchupAdjustment}x]
+                                    </span>
+                                  )}
                                   <div style={{ color: "#666" }}>Pass: {qb.passYards} yds, {qb.passTDs} TDs | Rush: {qb.rushYards} yds</div>
+                                  {qb.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{qb.matchupNotes}</div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -1591,7 +1748,15 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                               {team.data.runningBacks.map((rb, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{rb.name}</strong> - {rb.projectedPoints} pts ({rb.confidence})
+                                  {rb.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(rb.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(rb.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{rb.matchupAdjustment}x]
+                                    </span>
+                                  )}
                                   <div style={{ color: "#666" }}>Rush: {rb.rushYards} yds | Rec: {rb.receptions} rec, {rb.recYards} yds</div>
+                                  {rb.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{rb.matchupNotes}</div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -1603,7 +1768,15 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                               {team.data.receivers.map((rec, idx) => (
                                 <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
                                   <strong>{rec.name}</strong> - {rec.projectedPoints} pts ({rec.confidence})
+                                  {rec.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(rec.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(rec.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{rec.matchupAdjustment}x]
+                                    </span>
+                                  )}
                                   <div style={{ color: "#666" }}>{rec.receptions} rec, {rec.yards} yds, {rec.touchdowns} TDs</div>
+                                  {rec.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{rec.matchupNotes}</div>
+                                  )}
                                 </div>
                               ))}
                             </div>
@@ -1613,7 +1786,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                     })}
 
                     <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "11px", color: "#856404" }}>
-                      <strong>Note:</strong> For fantasy/DFS only. Full PPR scoring. Based on 4-game sample. Not for prop betting.
+                      <strong>Note:</strong> Fantasy projections now adjusted for opponent defensive strength using EPA, success rate, and pressure data from your JSON. Multipliers shown: Green = favorable matchup, Red = tough matchup.
                     </div>
                   </div>
                 )}
@@ -1622,7 +1795,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
                     <div style={{ marginBottom: "10px" }}>Step 1: Extracting statistics...</div>
                     <div style={{ marginBottom: "10px" }}>Step 2: Fetching injury reports...</div>
-                    <div style={{ marginBottom: "10px" }}>Step 3: Compiling all data...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 3: Calculating opponent adjustments...</div>
                     <div>Step 4: Generating deep analysis...</div>
                   </div>
                 )}
@@ -1634,7 +1807,7 @@ SP+ diff × 0.18 × 0.45 + Off SR diff × 220 × 0.22 + (Away Def SR - Home Def 
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.3: Manual Injury Input + Deep Analysis | Call 1-800-GAMBLER
+            v3.4: Opponent-Adjusted Fantasy Projections + Manual Injury Input | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
