@@ -410,26 +410,32 @@ Always show your math. Educational purposes only - not investment advice.`;
     };
   };
 
-  // VALIDATE DATA RANGES - RESTORED
   const validateDataRanges = (compiledData) => {
     const warnings = [];
     
     if (compiledData.sport === 'NFL') {
-      const homeEPA = compiledData.team_statistics.home.epa;
-      const awayEPA = compiledData.team_statistics.away.epa;
+      const homeEPA = compiledData.team_statistics?.home?.epa;
+      const awayEPA = compiledData.team_statistics?.away?.epa;
       
-      if (Math.abs(homeEPA) < 0.01 && Math.abs(awayEPA) < 0.01) {
-        warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
-      }
-      if (Math.abs(homeEPA) > 0.5 || Math.abs(awayEPA) > 0.5) {
-        warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
+      if (homeEPA !== undefined && awayEPA !== undefined) {
+        if (Math.abs(homeEPA) < 0.01 && Math.abs(awayEPA) < 0.01) {
+          warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
+        }
+        if (Math.abs(homeEPA) > 0.5 || Math.abs(awayEPA) > 0.5) {
+          warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
+        }
       }
     }
     
     if (compiledData.sport === 'CFB') {
-      const spPlusDiff = Math.abs(compiledData.team_statistics.home.sp_plus - compiledData.team_statistics.away.sp_plus);
-      if (spPlusDiff > 50) {
-        warnings.push("WARNING: SP+ differential extremely large (" + spPlusDiff.toFixed(1) + "). This suggests a major mismatch.");
+      const homeSP = compiledData.team_statistics?.home?.sp_plus;
+      const awaySP = compiledData.team_statistics?.away?.sp_plus;
+      
+      if (homeSP !== undefined && awaySP !== undefined) {
+        const spPlusDiff = Math.abs(homeSP - awaySP);
+        if (spPlusDiff > 50) {
+          warnings.push("WARNING: SP+ differential extremely large (" + spPlusDiff.toFixed(1) + "). This suggests a major mismatch.");
+        }
       }
     }
     
@@ -478,20 +484,20 @@ Always show your math. Educational purposes only - not investment advice.`;
       try {
         compiled.team_statistics = {
           home: {
-            sp_plus: gameData.team_data.home.sp_overall || 0,
-            off_success_rate: gameData.team_data.home.off_success_rate || 0,
-            def_success_rate: gameData.team_data.home.def_success_rate || 0,
-            explosiveness: gameData.team_data.home.off_explosiveness || 0,
-            havoc_rate: gameData.team_data.home.havoc_rate || 0,
-            ppg: gameData.team_data.home.points_per_game || 0
+            sp_plus: gameData.team_data?.home?.sp_overall || 0,
+            off_success_rate: gameData.team_data?.home?.off_success_rate || 0,
+            def_success_rate: gameData.team_data?.home?.def_success_rate || 0,
+            explosiveness: gameData.team_data?.home?.off_explosiveness || 0,
+            havoc_rate: gameData.team_data?.home?.havoc_rate || 0,
+            ppg: gameData.team_data?.home?.points_per_game || 0
           },
           away: {
-            sp_plus: gameData.team_data.away.sp_overall || 0,
-            off_success_rate: gameData.team_data.away.off_success_rate || 0,
-            def_success_rate: gameData.team_data.away.def_success_rate || 0,
-            explosiveness: gameData.team_data.away.off_explosiveness || 0,
-            havoc_rate: gameData.team_data.away.havoc_rate || 0,
-            ppg: gameData.team_data.away.points_per_game || 0
+            sp_plus: gameData.team_data?.away?.sp_overall || 0,
+            off_success_rate: gameData.team_data?.away?.off_success_rate || 0,
+            def_success_rate: gameData.team_data?.away?.def_success_rate || 0,
+            explosiveness: gameData.team_data?.away?.off_explosiveness || 0,
+            havoc_rate: gameData.team_data?.away?.havoc_rate || 0,
+            ppg: gameData.team_data?.away?.points_per_game || 0
           }
         };
       } catch (e) {
@@ -499,33 +505,47 @@ Always show your math. Educational purposes only - not investment advice.`;
       }
     } else {
       try {
-        const homeTeam = gameData.teams.home;
-        const awayTeam = gameData.teams.away;
-        const homeStats = gameData.team_statistics[homeTeam];
-        const awayStats = gameData.team_statistics[awayTeam];
+        const homeTeam = gameData.teams?.home;
+        const awayTeam = gameData.teams?.away;
+        
+        if (!homeTeam || !awayTeam) {
+          console.error('Team abbreviations missing:', { homeTeam, awayTeam });
+          console.log('GameData structure:', gameData);
+          return compiled;
+        }
+        
+        const homeStats = gameData.team_statistics?.[homeTeam];
+        const awayStats = gameData.team_statistics?.[awayTeam];
+        
+        if (!homeStats || !awayStats) {
+          console.error('Team statistics not found for:', { homeTeam, awayTeam });
+          console.log('Available teams in dataset:', Object.keys(gameData.team_statistics || {}));
+          return compiled;
+        }
         
         compiled.team_statistics = {
           home: {
             team_abbr: homeTeam,
-            epa: homeStats.offense.epa_per_play.overall,
-            success_rate: homeStats.offense.success_rate.overall,
-            explosive_pct: homeStats.offense.explosive_play_pct,
-            pass_block_win_rate: homeStats.offense.pass_block_win_rate,
-            third_down_rate: homeStats.offense.third_down_conversion_rate,
-            redzone_td_rate: homeStats.offense.red_zone_scoring.td_rate
+            epa: homeStats.offense?.epa_per_play?.overall || 0,
+            success_rate: homeStats.offense?.success_rate?.overall || 0,
+            explosive_pct: homeStats.offense?.explosive_play_pct || 0,
+            pass_block_win_rate: homeStats.offense?.pass_block_win_rate || 0,
+            third_down_rate: homeStats.offense?.third_down_conversion_rate || 0,
+            redzone_td_rate: homeStats.offense?.red_zone_scoring?.td_rate || 0
           },
           away: {
             team_abbr: awayTeam,
-            epa: awayStats.offense.epa_per_play.overall,
-            success_rate: awayStats.offense.success_rate.overall,
-            explosive_pct: awayStats.offense.explosive_play_pct,
-            pass_block_win_rate: awayStats.offense.pass_block_win_rate,
-            third_down_rate: awayStats.offense.third_down_conversion_rate,
-            redzone_td_rate: awayStats.offense.red_zone_scoring.td_rate
+            epa: awayStats.offense?.epa_per_play?.overall || 0,
+            success_rate: awayStats.offense?.success_rate?.overall || 0,
+            explosive_pct: awayStats.offense?.explosive_play_pct || 0,
+            pass_block_win_rate: awayStats.offense?.pass_block_win_rate || 0,
+            third_down_rate: awayStats.offense?.third_down_conversion_rate || 0,
+            redzone_td_rate: awayStats.offense?.red_zone_scoring?.td_rate || 0
           }
         };
       } catch (e) {
         console.error('NFL data extraction error:', e);
+        console.log('Full error details:', e.stack);
       }
     }
     
@@ -539,7 +559,6 @@ Always show your math. Educational purposes only - not investment advice.`;
         const moneyline = marketData.moneyline?.outcomes || [];
         
         const homeSpread = spread.find(o => o.name === game.home_team);
-        const awaySpread = spread.find(o => o.name === game.away_team);
         
         compiled.market_odds = {
           source: 'the-odds-api',
@@ -563,7 +582,8 @@ Always show your math. Educational purposes only - not investment advice.`;
     if (!teamName || typeof teamName !== 'string') return 'unknown';
     
     const nflTeams = {
-      'San Francisco 49ers': 'sf', 'Los Angeles Rams': 'lar'
+      'San Francisco 49ers': 'SF', 
+      'Los Angeles Rams': 'LAR'
     };
 
     if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
@@ -810,7 +830,7 @@ Always show your math. Educational purposes only - not investment advice.`;
       // STEP 2: Compile all data
       const compiledData = compileAllGameData(game, gameData, espnData, marketData, fantasyData);
       
-      // Validate data ranges - RESTORED
+      // Validate data ranges
       const dataWarnings = validateDataRanges(compiledData);
       
       // Debug log
