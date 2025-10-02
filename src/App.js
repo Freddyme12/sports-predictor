@@ -14,10 +14,114 @@ export default function App() {
   const [backendDataCache, setBackendDataCache] = useState({});
   const [backendFetchStatus, setBackendFetchStatus] = useState('idle');
   const [apiSportsKey, setApiSportsKey] = useState("");
+  const [debugLog, setDebugLog] = useState([]);
 
   const BACKEND_URL = "https://sports-predictor-ruddy.vercel.app";
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
+
+  // NEW: Team Name Resolver System
+  const TEAM_RESOLVER = {
+    nfl: {
+      'SF': ['San Francisco 49ers', 'San Francisco', '49ers', 'SF', 'SFO'],
+      'LAR': ['Los Angeles Rams', 'LA Rams', 'Rams', 'LAR', 'LA'],
+      'KC': ['Kansas City Chiefs', 'Kansas City', 'Chiefs', 'KC'],
+      'BUF': ['Buffalo Bills', 'Buffalo', 'Bills', 'BUF'],
+      'PHI': ['Philadelphia Eagles', 'Philadelphia', 'Eagles', 'PHI'],
+      'DAL': ['Dallas Cowboys', 'Dallas', 'Cowboys', 'DAL'],
+      'MIA': ['Miami Dolphins', 'Miami', 'Dolphins', 'MIA'],
+      'BAL': ['Baltimore Ravens', 'Baltimore', 'Ravens', 'BAL'],
+      'CIN': ['Cincinnati Bengals', 'Cincinnati', 'Bengals', 'CIN'],
+      'JAX': ['Jacksonville Jaguars', 'Jacksonville', 'Jaguars', 'JAX'],
+      'LAC': ['Los Angeles Chargers', 'LA Chargers', 'Chargers', 'LAC'],
+      'DET': ['Detroit Lions', 'Detroit', 'Lions', 'DET'],
+      'CLE': ['Cleveland Browns', 'Cleveland', 'Browns', 'CLE'],
+      'NYJ': ['New York Jets', 'NY Jets', 'Jets', 'NYJ'],
+      'SEA': ['Seattle Seahawks', 'Seattle', 'Seahawks', 'SEA'],
+      'MIN': ['Minnesota Vikings', 'Minnesota', 'Vikings', 'MIN'],
+      'GB': ['Green Bay Packers', 'Green Bay', 'Packers', 'GB'],
+      'TB': ['Tampa Bay Buccaneers', 'Tampa Bay', 'Buccaneers', 'TB'],
+      'NO': ['New Orleans Saints', 'New Orleans', 'Saints', 'NO'],
+      'PIT': ['Pittsburgh Steelers', 'Pittsburgh', 'Steelers', 'PIT'],
+      'LV': ['Las Vegas Raiders', 'Las Vegas', 'Raiders', 'LV'],
+      'TEN': ['Tennessee Titans', 'Tennessee', 'Titans', 'TEN'],
+      'ATL': ['Atlanta Falcons', 'Atlanta', 'Falcons', 'ATL'],
+      'HOU': ['Houston Texans', 'Houston', 'Texans', 'HOU'],
+      'IND': ['Indianapolis Colts', 'Indianapolis', 'Colts', 'IND'],
+      'DEN': ['Denver Broncos', 'Denver', 'Broncos', 'DEN'],
+      'ARI': ['Arizona Cardinals', 'Arizona', 'Cardinals', 'ARI'],
+      'WAS': ['Washington Commanders', 'Washington', 'Commanders', 'WAS'],
+      'CHI': ['Chicago Bears', 'Chicago', 'Bears', 'CHI'],
+      'NYG': ['New York Giants', 'NY Giants', 'Giants', 'NYG'],
+      'NE': ['New England Patriots', 'New England', 'Patriots', 'NE'],
+      'CAR': ['Carolina Panthers', 'Carolina', 'Panthers', 'CAR']
+    },
+    cfb: {}
+  };
+
+  const addDebugLog = (message, data = null) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = { timestamp, message, data };
+    console.log(`[${timestamp}] ${message}`, data || '');
+    setDebugLog(prev => [...prev.slice(-49), logEntry]);
+  };
+
+  const resolveTeamName = (teamName, sport = 'nfl') => {
+    if (!teamName || typeof teamName !== 'string') {
+      addDebugLog('⚠️ Invalid team name', teamName);
+      return { abbr: null, normalized: null, variants: [] };
+    }
+
+    const sportMap = TEAM_RESOLVER[sport] || TEAM_RESOLVER.nfl;
+    const normalizedInput = teamName.toLowerCase().replace(/[^a-z]/g, '');
+
+    // Try exact match first
+    for (const [abbr, variants] of Object.entries(sportMap)) {
+      for (const variant of variants) {
+        const normalizedVariant = variant.toLowerCase().replace(/[^a-z]/g, '');
+        if (normalizedInput === normalizedVariant) {
+          addDebugLog(`✓ Exact match: "${teamName}" → ${abbr}`, { variants });
+          return { abbr, normalized: normalizedVariant, variants };
+        }
+      }
+    }
+
+    // Try partial match
+    for (const [abbr, variants] of Object.entries(sportMap)) {
+      for (const variant of variants) {
+        const normalizedVariant = variant.toLowerCase().replace(/[^a-z]/g, '');
+        if (normalizedInput.includes(normalizedVariant) || normalizedVariant.includes(normalizedInput)) {
+          addDebugLog(`✓ Partial match: "${teamName}" → ${abbr}`, { variants });
+          return { abbr, normalized: normalizedVariant, variants };
+        }
+      }
+    }
+
+    // No match found
+    addDebugLog(`❌ No match found for: "${teamName}"`, { normalizedInput });
+    return { abbr: null, normalized: normalizedInput, variants: [] };
+  };
+
+  const matchTeams = (team1, team2, sport = 'nfl') => {
+    const resolved1 = resolveTeamName(team1, sport);
+    const resolved2 = resolveTeamName(team2, sport);
+
+    if (resolved1.abbr && resolved2.abbr) {
+      const match = resolved1.abbr === resolved2.abbr;
+      addDebugLog(`Team match: "${team1}" vs "${team2}" → ${match ? '✓ MATCH' : '✗ NO MATCH'}`, {
+        team1: resolved1.abbr,
+        team2: resolved2.abbr
+      });
+      return match;
+    }
+
+    const fallbackMatch = resolved1.normalized === resolved2.normalized;
+    addDebugLog(`Fallback match: "${team1}" vs "${team2}" → ${fallbackMatch ? '✓ MATCH' : '✗ NO MATCH'}`, {
+      team1: resolved1.normalized,
+      team2: resolved2.normalized
+    });
+    return fallbackMatch;
+  };
 
   const systemPrompt = `You are an advanced sports analyst. You receive pre-compiled data with all values already extracted and verified.
 
@@ -81,12 +185,14 @@ Always show your math. Educational purposes only - not investment advice.`;
       
       return data.games;
     } catch (err) {
+      addDebugLog('❌ Backend fetch error', err.message);
       return null;
     }
   };
 
   const supplementGameDataFromBackend = async (games, sport) => {
     setBackendFetchStatus('fetching');
+    addDebugLog('🔄 Fetching backend data...', { sport, gameCount: games.length });
     
     const currentYear = new Date().getFullYear();
     const estimatedWeek = 5;
@@ -96,30 +202,33 @@ Always show your math. Educational purposes only - not investment advice.`;
       
       if (!backendGames || backendGames.length === 0) {
         setBackendFetchStatus('unavailable');
+        addDebugLog('⚠️ No backend data available');
         return games;
       }
+      
+      addDebugLog('✓ Backend data fetched', { count: backendGames.length });
       
       const supplementedGames = games.map(jsonGame => {
         const matchingBackendGame = backendGames.find(bgGame => {
           if (!bgGame.home_team || !bgGame.away_team) return false;
           
-          const normalizeTeam = (name) => (name || '').toLowerCase().replace(/[^a-z]/g, '');
-          const jsonHome = normalizeTeam(jsonGame.home_team);
-          const jsonAway = normalizeTeam(jsonGame.away_team);
-          const bgHome = normalizeTeam(bgGame.home_team);
-          const bgAway = normalizeTeam(bgGame.away_team);
+          const homeMatch = matchTeams(jsonGame.home_team, bgGame.home_team, 'nfl');
+          const awayMatch = matchTeams(jsonGame.away_team, bgGame.away_team, 'nfl');
           
-          return (jsonHome.includes(bgHome) || bgHome.includes(jsonHome)) &&
-                 (jsonAway.includes(bgAway) || bgAway.includes(bgAway));
+          return homeMatch && awayMatch;
         });
         
         if (matchingBackendGame) {
+          addDebugLog('✓ Backend data merged', {
+            game: `${jsonGame.away_team} @ ${jsonGame.home_team}`
+          });
+          
           const mergedGameData = Object.assign({}, jsonGame.datasetGame);
           
           if (matchingBackendGame.team_data) {
             mergedGameData.team_data = {
-              home: Object.assign({}, mergedGameData.team_data && mergedGameData.team_data.home || {}, matchingBackendGame.team_data.home),
-              away: Object.assign({}, mergedGameData.team_data && mergedGameData.team_data.away || {}, matchingBackendGame.team_data.away)
+              home: Object.assign({}, mergedGameData.team_data?.home || {}, matchingBackendGame.team_data.home),
+              away: Object.assign({}, mergedGameData.team_data?.away || {}, matchingBackendGame.team_data.away)
             };
           }
           
@@ -138,10 +247,12 @@ Always show your math. Educational purposes only - not investment advice.`;
       
       const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
       setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
+      addDebugLog(`✓ Backend merge complete`, { mergedCount, totalGames: games.length });
       
       return supplementedGames;
     } catch (err) {
       setBackendFetchStatus('error');
+      addDebugLog('❌ Backend supplement error', err.message);
       return games;
     }
   };
@@ -159,6 +270,8 @@ Always show your math. Educational purposes only - not investment advice.`;
       };
       
       const sportPath = sportMap[sport] || 'football/nfl';
+      addDebugLog('🔄 Fetching API-Sports odds...', { sport: sportPath });
+      
       const response = await fetch(
         `${BACKEND_URL}/api/apisports-odds?sport=${encodeURIComponent(sportPath)}&date=${gameDate}`,
         {
@@ -168,11 +281,16 @@ Always show your math. Educational purposes only - not investment advice.`;
         }
       );
 
-      if (!response.ok) return null;
+      if (!response.ok) {
+        addDebugLog('❌ API-Sports odds failed', response.status);
+        return null;
+      }
+      
       const data = await response.json();
+      addDebugLog('✓ API-Sports odds fetched', { count: data.odds?.length || 0 });
       return data.odds || [];
     } catch (error) {
-      console.error('API-Sports odds fetch error:', error);
+      addDebugLog('❌ API-Sports odds error', error.message);
       return null;
     }
   };
@@ -183,6 +301,9 @@ Always show your math. Educational purposes only - not investment advice.`;
     }
 
     try {
+      const resolved = resolveTeamName(teamName, 'nfl');
+      const teamToFetch = resolved.abbr || teamName;
+      
       const sportMap = {
         'americanfootball_nfl': 'football/nfl',
         'americanfootball_ncaaf': 'football/college-football',
@@ -192,21 +313,24 @@ Always show your math. Educational purposes only - not investment advice.`;
       };
       
       const sportPath = sportMap[sport] || 'football/nfl';
+      addDebugLog('🔄 Fetching injuries...', { team: teamToFetch, resolved: resolved.abbr });
       
       const response = await fetch(
-        `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamName)}`,
+        `${BACKEND_URL}/api/espn-proxy?sport=${encodeURIComponent(sportPath)}&team=${encodeURIComponent(teamToFetch)}`,
         {
           headers: apiSportsKey ? { 'x-api-key': apiSportsKey } : {}
         }
       );
 
       if (!response.ok) {
+        addDebugLog('❌ Injury fetch failed', { team: teamName, status: response.status });
         return { team: teamName, injuries: [], source: 'api-error' };
       }
 
       const data = await response.json();
       
       if (data.success && data.injuries) {
+        addDebugLog('✓ Injuries fetched', { team: teamName, count: data.injuries.length });
         return {
           team: teamName,
           injuries: data.injuries.map(inj => ({
@@ -216,9 +340,10 @@ Always show your math. Educational purposes only - not investment advice.`;
         };
       }
 
+      addDebugLog('⚠️ No injury data', { team: teamName });
       return { team: teamName, injuries: [], source: 'no-data' };
     } catch (error) {
-      console.error('Injury fetch error:', error);
+      addDebugLog('❌ Injury fetch error', { team: teamName, error: error.message });
       return { team: teamName, injuries: [], source: 'error' };
     }
   };
@@ -442,11 +567,9 @@ Always show your math. Educational purposes only - not investment advice.`;
     return warnings;
   };
 
-  // STEP 2: COMPILE ALL DATA INTO CLEAN FORMAT
   const compileAllGameData = (game, gameData, espnData, marketData, fantasyData) => {
     const isCFB = gameData.team_data !== undefined;
     
-    // Calculate injury impact
     const injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
     
     const compiled = {
@@ -479,7 +602,6 @@ Always show your math. Educational purposes only - not investment advice.`;
       }
     };
     
-    // Extract team statistics based on sport
     if (isCFB) {
       try {
         compiled.team_statistics = {
@@ -501,7 +623,7 @@ Always show your math. Educational purposes only - not investment advice.`;
           }
         };
       } catch (e) {
-        console.error('CFB data extraction error:', e);
+        addDebugLog('❌ CFB data extraction error', e.message);
       }
     } else {
       try {
@@ -509,8 +631,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         const awayTeam = gameData.teams?.away;
         
         if (!homeTeam || !awayTeam) {
-          console.error('Team abbreviations missing:', { homeTeam, awayTeam });
-          console.log('GameData structure:', gameData);
+          addDebugLog('❌ Team abbreviations missing', { homeTeam, awayTeam });
           return compiled;
         }
         
@@ -518,8 +639,11 @@ Always show your math. Educational purposes only - not investment advice.`;
         const awayStats = gameData.team_statistics?.[awayTeam];
         
         if (!homeStats || !awayStats) {
-          console.error('Team statistics not found for:', { homeTeam, awayTeam });
-          console.log('Available teams in dataset:', Object.keys(gameData.team_statistics || {}));
+          addDebugLog('❌ Team statistics not found', { 
+            homeTeam, 
+            awayTeam,
+            availableTeams: Object.keys(gameData.team_statistics || {})
+          });
           return compiled;
         }
         
@@ -543,13 +667,18 @@ Always show your math. Educational purposes only - not investment advice.`;
             redzone_td_rate: awayStats.offense?.red_zone_scoring?.td_rate || 0
           }
         };
+        
+        addDebugLog('✓ NFL statistics compiled', { 
+          home: homeTeam, 
+          away: awayTeam,
+          homeEPA: compiled.team_statistics.home.epa,
+          awayEPA: compiled.team_statistics.away.epa
+        });
       } catch (e) {
-        console.error('NFL data extraction error:', e);
-        console.log('Full error details:', e.stack);
+        addDebugLog('❌ NFL data extraction error', e.stack);
       }
     }
     
-    // Compile market odds
     if (marketData) {
       compiled.data_quality.market_odds_available = true;
       
@@ -581,13 +710,8 @@ Always show your math. Educational purposes only - not investment advice.`;
   const getTeamAbbreviation = (teamName, sport) => {
     if (!teamName || typeof teamName !== 'string') return 'unknown';
     
-    const nflTeams = {
-      'San Francisco 49ers': 'SF', 
-      'Los Angeles Rams': 'LAR'
-    };
-
-    if (sport === 'nfl') return nflTeams[teamName] || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
-    return teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 4);
+    const resolved = resolveTeamName(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
+    return resolved.abbr || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
   };
 
   const fetchESPNData = async (teamName, sport) => {
@@ -604,7 +728,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         'icehockey_nhl': 'hockey/nhl'
       };
       const sportPath = sportMap[sport] || 'football/nfl';
-      const teamAbbr = getTeamAbbreviation(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
+      const teamAbbr = getTeamAbbreviation(teamName, sport);
       
       const proxyUrl = BACKEND_URL + "/api/espn-proxy?sport=" + encodeURIComponent(sportPath) + "&team=" + encodeURIComponent(teamAbbr);
       
@@ -640,9 +764,11 @@ Always show your math. Educational purposes only - not investment advice.`;
       setParsedDataset(parsed);
       setDatasetLoaded(true);
       setError("");
+      addDebugLog('✓ Dataset parsed successfully', { gameCount: parsed.games?.length });
     } catch (err) {
       setDatasetLoaded(false);
       setError("Invalid JSON format.");
+      addDebugLog('❌ Dataset parse error', err.message);
     }
   };
 
@@ -650,6 +776,8 @@ Always show your math. Educational purposes only - not investment advice.`;
     setLoading(true);
     setError("");
     setGames([]);
+    setDebugLog([]);
+    addDebugLog('🚀 Starting game fetch process...');
 
     try {
       if (!parsedDataset || !parsedDataset.games) {
@@ -663,6 +791,7 @@ Always show your math. Educational purposes only - not investment advice.`;
 
       if (apiKey.trim()) {
         try {
+          addDebugLog('🔄 Fetching from The Odds API...');
           const url = "https://api.the-odds-api.com/v4/sports/" + selectedSport + "/odds?apiKey=" + apiKey + "&regions=us&markets=h2h,spreads,totals&oddsFormat=american";
           const response = await fetch(url);
 
@@ -673,10 +802,11 @@ Always show your math. Educational purposes only - not investment advice.`;
                 ...game,
                 id: game.id || (game.sport_key + "_" + index)
               }));
+              addDebugLog('✓ The Odds API data fetched', { count: gamesWithIds.length });
             }
           }
         } catch (apiError) {
-          console.warn("The Odds API unavailable:", apiError);
+          addDebugLog('⚠️ The Odds API unavailable', apiError.message);
         }
       }
 
@@ -695,6 +825,7 @@ Always show your math. Educational purposes only - not investment advice.`;
             bookmakers: [],
             apiSportsOdds: [odd]
           }));
+          addDebugLog('✓ API-Sports odds loaded', { count: gamesWithIds.length });
         }
       }
 
@@ -706,8 +837,8 @@ Always show your math. Educational purposes only - not investment advice.`;
           awayTeam = game.away_team || 'Unknown Away';
           gameTime = game.date || new Date().toISOString();
         } else {
-          homeTeam = game.teams && game.teams.home || game.home_team || 'Unknown Home';
-          awayTeam = game.teams && game.teams.away || game.away_team || 'Unknown Away';
+          homeTeam = game.teams?.home || game.home_team || 'Unknown Home';
+          awayTeam = game.teams?.away || game.away_team || 'Unknown Away';
           gameTime = game.kickoff_local || game.date || new Date().toISOString();
         }
 
@@ -722,24 +853,26 @@ Always show your math. Educational purposes only - not investment advice.`;
         };
       });
 
+      addDebugLog('✓ Dataset games processed', { count: datasetGames.length });
+
       if (gamesWithIds.length > 0) {
+        addDebugLog('🔄 Matching odds to dataset games...');
+        let matchCount = 0;
+        
         gamesWithIds = gamesWithIds.map(oddsGame => {
           const matchingDatasetGame = datasetGames.find(dg => {
             if (!dg.home_team || !dg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
               return false;
             }
             
-            const normalizeTeam = (name) => name.toLowerCase().replace(/[^a-z]/g, '');
-            const dgHome = normalizeTeam(dg.home_team);
-            const dgAway = normalizeTeam(dg.away_team);
-            const oddsHome = normalizeTeam(oddsGame.home_team);
-            const oddsAway = normalizeTeam(oddsGame.away_team);
+            const homeMatch = matchTeams(dg.home_team, oddsGame.home_team, 'nfl');
+            const awayMatch = matchTeams(dg.away_team, oddsGame.away_team, 'nfl');
             
-            return (dgHome.includes(oddsHome) || oddsHome.includes(dgHome)) &&
-                   (dgAway.includes(oddsAway) || oddsAway.includes(dgAway));
+            return homeMatch && awayMatch;
           });
           
           if (matchingDatasetGame) {
+            matchCount++;
             return Object.assign({}, oddsGame, {
               datasetGame: matchingDatasetGame.datasetGame,
               useApiSportsOdds: useApiSportsForOdds
@@ -747,13 +880,17 @@ Always show your math. Educational purposes only - not investment advice.`;
           }
           return Object.assign({}, oddsGame, { useApiSportsOdds: useApiSportsForOdds });
         });
+        
+        addDebugLog('✓ Odds matching complete', { matched: matchCount, total: gamesWithIds.length });
       } else {
         gamesWithIds = datasetGames;
+        addDebugLog('⚠️ No odds data, using dataset games only');
       }
 
       gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
       
       setGames(gamesWithIds);
+      addDebugLog('✓ Games loaded', { totalGames: gamesWithIds.length });
 
       for (const game of gamesWithIds) {
         const hasValidTeams = game.home_team && game.away_team && 
@@ -777,14 +914,15 @@ Always show your math. Educational purposes only - not investment advice.`;
 
     } catch (err) {
       setError(err.message || "Error loading games");
+      addDebugLog('❌ Fatal error', err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // STEP 3: AI ANALYZES USING COMPILED DATA
   const analyzeGame = async (game) => {
     setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: true } })));
+    addDebugLog('🎯 Starting analysis', { game: `${game.away_team} @ ${game.home_team}` });
 
     try {
       const gameData = game.datasetGame;
@@ -816,8 +954,8 @@ Always show your math. Educational purposes only - not investment advice.`;
       let fantasyData = null;
       
       if (!isCFB && gameData.player_statistics) {
-        const homeTeam = gameData.teams && gameData.teams.home;
-        const awayTeam = gameData.teams && gameData.teams.away;
+        const homeTeam = gameData.teams?.home;
+        const awayTeam = gameData.teams?.away;
         
         if (homeTeam && awayTeam) {
           fantasyData = {
@@ -827,17 +965,15 @@ Always show your math. Educational purposes only - not investment advice.`;
         }
       }
 
-      // STEP 2: Compile all data
       const compiledData = compileAllGameData(game, gameData, espnData, marketData, fantasyData);
-      
-      // Validate data ranges
       const dataWarnings = validateDataRanges(compiledData);
       
-      // Debug log
-      console.log('=== COMPILED DATA ===');
-      console.log(compiledData);
+      addDebugLog('✓ Data compiled', { 
+        hasMarket: compiledData.data_quality.market_odds_available,
+        hasInjuries: compiledData.data_quality.injury_data_available,
+        warnings: dataWarnings.length
+      });
 
-      // Build prompt with compiled data
       let prompt = "=== COMPILED GAME DATA ===\n";
       prompt += "All data has been pre-extracted and verified by JavaScript. Use these values directly.\n\n";
       prompt += JSON.stringify(compiledData, null, 2) + "\n\n";
@@ -885,7 +1021,9 @@ Always show your math. Educational purposes only - not investment advice.`;
       }
 
       const result = await response.json();
-      const analysis = result.choices[0] && result.choices[0].message && result.choices[0].message.content || "Analysis unavailable";
+      const analysis = result.choices[0]?.message?.content || "Analysis unavailable";
+
+      addDebugLog('✓ Analysis complete');
 
       setAnalyses(prev => (Object.assign({}, prev, {
         [game.id]: { 
@@ -897,6 +1035,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         }
       })));
     } catch (err) {
+      addDebugLog('❌ Analysis error', err.message);
       setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: false, text: "Error: " + err.message } })));
     }
   };
@@ -933,9 +1072,9 @@ Always show your math. Educational purposes only - not investment advice.`;
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.0</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.1</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          3-Step Architecture: Extract → Compile → Analyze | Data Validation | Pure Data-Driven Analysis
+          Team Resolver | Debug Logging | Data Validation | Pure Data-Driven Analysis
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -954,7 +1093,7 @@ Always show your math. Educational purposes only - not investment advice.`;
           </button>
           {datasetLoaded && (
             <span style={{ color: "#10b981", fontSize: "14px", fontWeight: "600" }}>
-              ✓ Dataset Loaded - {parsedDataset && parsedDataset.games && parsedDataset.games.length || 0} games
+              ✓ Dataset Loaded - {parsedDataset?.games?.length || 0} games
             </span>
           )}
         </div>
@@ -1024,6 +1163,27 @@ Always show your math. Educational purposes only - not investment advice.`;
           </button>
         </div>
 
+        {debugLog.length > 0 && (
+          <div style={{ backgroundColor: "white", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+              <h3 style={{ margin: 0, fontSize: "14px", fontWeight: "600" }}>Debug Log</h3>
+              <button 
+                onClick={() => setDebugLog([])}
+                style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "#dc3545", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
+              >
+                Clear
+              </button>
+            </div>
+            <div style={{ maxHeight: "200px", overflowY: "auto", fontSize: "11px", fontFamily: "monospace", backgroundColor: "#f8f9fa", padding: "10px", borderRadius: "4px" }}>
+              {debugLog.map((log, idx) => (
+                <div key={idx} style={{ marginBottom: "4px", color: log.message.startsWith('❌') ? '#dc3545' : log.message.startsWith('✓') ? '#28a745' : '#666' }}>
+                  [{log.timestamp}] {log.message}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {error && <div style={{ backgroundColor: "#fee2e2", padding: "15px", borderRadius: "8px", marginBottom: "20px", color: "#dc2626" }}>{error}</div>}
 
         {games.map(game => {
@@ -1041,16 +1201,16 @@ Always show your math. Educational purposes only - not investment advice.`;
                   </div>
                   <button 
                     onClick={() => analyzeGame(game)} 
-                    disabled={analysis && analysis.loading} 
-                    style={{ padding: "8px 16px", backgroundColor: analysis && analysis.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: analysis && analysis.loading ? "not-allowed" : "pointer" }}
+                    disabled={analysis?.loading} 
+                    style={{ padding: "8px 16px", backgroundColor: analysis?.loading ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: analysis?.loading ? "not-allowed" : "pointer" }}
                   >
-                    {analysis && analysis.loading ? "Analyzing..." : "Analyze"}
+                    {analysis?.loading ? "Analyzing..." : "Analyze"}
                   </button>
                 </div>
               </div>
 
               <div style={{ padding: "15px" }}>
-                {analysis && analysis.compiledData && (
+                {analysis?.compiledData && (
                   <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "6px", border: "1px solid #dee2e6" }}>
                     <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#495057" }}>
                       Data Compilation Status:
@@ -1086,7 +1246,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                   </div>
                 )}
                 
-                {analysis && analysis.dataWarnings && analysis.dataWarnings.length > 0 && (
+                {analysis?.dataWarnings?.length > 0 && (
                   <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
                     <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
                       Data Quality Warnings:
@@ -1099,13 +1259,13 @@ Always show your math. Educational purposes only - not investment advice.`;
                   </div>
                 )}
                 
-                {analysis && analysis.text && (
+                {analysis?.text && (
                   <div style={{ backgroundColor: "#f8f9fa", padding: "15px", borderRadius: "6px", fontSize: "12px", whiteSpace: "pre-wrap", maxHeight: "600px", overflowY: "auto", lineHeight: "1.6" }}>
                     {analysis.text}
                   </div>
                 )}
 
-                {analysis && analysis.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
+                {analysis?.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
                   <div style={{ marginTop: "20px", padding: "20px", backgroundColor: "#f0f8ff", borderRadius: "8px", border: "2px solid #0066cc" }}>
                     <h3 style={{ margin: "0 0 15px 0", color: "#0066cc", fontSize: "18px" }}>
                       Fantasy Football Projections
@@ -1123,7 +1283,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                             {team.label}
                           </h4>
                           
-                          {team.data.quarterbacks && team.data.quarterbacks.length > 0 && (
+                          {team.data.quarterbacks?.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
                               <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Quarterbacks</div>
                               {team.data.quarterbacks.map((qb, idx) => (
@@ -1135,7 +1295,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                             </div>
                           )}
 
-                          {team.data.runningBacks && team.data.runningBacks.length > 0 && (
+                          {team.data.runningBacks?.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
                               <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Running Backs</div>
                               {team.data.runningBacks.map((rb, idx) => (
@@ -1147,7 +1307,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                             </div>
                           )}
 
-                          {team.data.receivers && team.data.receivers.length > 0 && (
+                          {team.data.receivers?.length > 0 && (
                             <div style={{ marginBottom: "10px" }}>
                               <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Receivers / Tight Ends</div>
                               {team.data.receivers.map((rec, idx) => (
@@ -1168,7 +1328,7 @@ Always show your math. Educational purposes only - not investment advice.`;
                   </div>
                 )}
 
-                {analysis && analysis.loading && (
+                {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
                     <div style={{ marginBottom: "10px" }}>Step 1: Extracting data from JSON...</div>
                     <div style={{ marginBottom: "10px" }}>Step 2: Compiling all sources...</div>
@@ -1183,7 +1343,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.0: 3-Step Architecture | JavaScript Extracts → Compiles → AI Analyzes | Data Validation | Call 1-800-GAMBLER
+            v3.1: Team Resolver + Debug Logging | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
