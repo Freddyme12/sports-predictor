@@ -20,7 +20,7 @@ export default function App() {
   const [showWarning, setShowWarning] = useState(true);
   const [userAcknowledged, setUserAcknowledged] = useState(false);
 
-  // NEW: Team Name Resolver System
+  // Team Name Resolver System
   const TEAM_RESOLVER = {
     nfl: {
       'SF': ['San Francisco 49ers', 'San Francisco', '49ers', 'SF', 'SFO'],
@@ -75,7 +75,6 @@ export default function App() {
     const sportMap = TEAM_RESOLVER[sport] || TEAM_RESOLVER.nfl;
     const normalizedInput = teamName.toLowerCase().replace(/[^a-z]/g, '');
 
-    // Try exact match first
     for (const [abbr, variants] of Object.entries(sportMap)) {
       for (const variant of variants) {
         const normalizedVariant = variant.toLowerCase().replace(/[^a-z]/g, '');
@@ -86,7 +85,6 @@ export default function App() {
       }
     }
 
-    // Try partial match
     for (const [abbr, variants] of Object.entries(sportMap)) {
       for (const variant of variants) {
         const normalizedVariant = variant.toLowerCase().replace(/[^a-z]/g, '');
@@ -97,7 +95,6 @@ export default function App() {
       }
     }
 
-    // No match found
     addDebugLog(`❌ No match found for: "${teamName}"`, { normalizedInput });
     return { abbr: null, normalized: normalizedInput, variants: [] };
   };
@@ -637,6 +634,8 @@ Always show your math. Educational purposes only - not investment advice.`;
         
         const homeStats = gameData.team_statistics?.[homeTeam];
         const awayStats = gameData.team_statistics?.[awayTeam];
+        const homePlayerStats = gameData.player_statistics?.[homeTeam];
+        const awayPlayerStats = gameData.player_statistics?.[awayTeam];
         
         if (!homeStats || !awayStats) {
           addDebugLog('❌ Team statistics not found', { 
@@ -652,19 +651,19 @@ Always show your math. Educational purposes only - not investment advice.`;
             team_abbr: homeTeam,
             epa: homeStats.offense?.epa_per_play?.overall || 0,
             success_rate: homeStats.offense?.success_rate?.overall || 0,
-            explosive_pct: homeStats.offense?.explosive_play_pct || 0,
-            pass_block_win_rate: homeStats.offense?.pass_block_win_rate || 0,
-            third_down_rate: homeStats.offense?.third_down_conversion_rate || 0,
-            redzone_td_rate: homeStats.offense?.red_zone_scoring?.td_rate || 0
+            explosive_pct: homeStats.offense?.explosive_play_share?.overall || 0,
+            pass_block_win_rate: homePlayerStats?.offensive_line_unit?.pass_block_win_rate || 0,
+            third_down_rate: homeStats.offense?.third_down?.overall || 0,
+            redzone_td_rate: homeStats.offense?.red_zone?.td_rate || 0
           },
           away: {
             team_abbr: awayTeam,
             epa: awayStats.offense?.epa_per_play?.overall || 0,
             success_rate: awayStats.offense?.success_rate?.overall || 0,
-            explosive_pct: awayStats.offense?.explosive_play_pct || 0,
-            pass_block_win_rate: awayStats.offense?.pass_block_win_rate || 0,
-            third_down_rate: awayStats.offense?.third_down_conversion_rate || 0,
-            redzone_td_rate: awayStats.offense?.red_zone_scoring?.td_rate || 0
+            explosive_pct: awayStats.offense?.explosive_play_share?.overall || 0,
+            pass_block_win_rate: awayPlayerStats?.offensive_line_unit?.pass_block_win_rate || 0,
+            third_down_rate: awayStats.offense?.third_down?.overall || 0,
+            redzone_td_rate: awayStats.offense?.red_zone?.td_rate || 0
           }
         };
         
@@ -672,7 +671,9 @@ Always show your math. Educational purposes only - not investment advice.`;
           home: homeTeam, 
           away: awayTeam,
           homeEPA: compiled.team_statistics.home.epa,
-          awayEPA: compiled.team_statistics.away.epa
+          awayEPA: compiled.team_statistics.away.epa,
+          homeExplosive: compiled.team_statistics.home.explosive_pct,
+          awayExplosive: compiled.team_statistics.away.explosive_pct
         });
       } catch (e) {
         addDebugLog('❌ NFL data extraction error', e.stack);
@@ -1074,7 +1075,7 @@ Always show your math. Educational purposes only - not investment advice.`;
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v3.1</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          Team Resolver | Debug Logging | Data Validation | Pure Data-Driven Analysis
+          Team Resolver | Fixed Data Extraction | Debug Logging | Pure Data-Driven Analysis
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1343,7 +1344,7 @@ Always show your math. Educational purposes only - not investment advice.`;
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v3.1: Team Resolver + Debug Logging | Call 1-800-GAMBLER
+            v3.1: Fixed Data Extraction | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
