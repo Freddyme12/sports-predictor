@@ -153,9 +153,13 @@ export default function App() {
     const features = {
       division_game: gameData.division_game || 0,
       home_field_advantage: 2.5,
+      short_week: 0, 
+      weather_impact: 0,
       rest_days: 7,
       spread_line: gameData.spread_line || 0,
       total_line: gameData.total_line || 0,
+      home_win_prob_implied: gameData.home_win_prob_implied || 0.5,
+      away_win_prob_implied: gameData.away_win_prob_implied || 0.5,
       home_epa_overall_rolling: homeStats.offense?.epa_per_play?.overall || 0,
       home_epa_pass_rolling: homeStats.offense?.epa_per_play?.pass || 0,
       home_epa_rush_rolling: homeStats.offense?.epa_per_play?.rush || 0,
