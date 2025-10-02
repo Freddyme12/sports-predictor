@@ -121,7 +121,13 @@ export default function App() {
     return fallbackMatch;
   };
 
+  // ONLY CHANGE: Added debug logging to extractModelFeatures
   const extractModelFeatures = (gameData) => {
+    console.log('=== extractModelFeatures DEBUG START ===');
+    console.log('gameData:', gameData);
+    console.log('gameData.team_statistics:', gameData?.team_statistics);
+    console.log('gameData.teams:', gameData?.teams);
+    
     if (!gameData || !gameData.team_statistics) {
       console.error('extractModelFeatures: Missing gameData or team_statistics');
       return null;
@@ -130,20 +136,16 @@ export default function App() {
     const homeTeam = gameData.teams?.home;
     const awayTeam = gameData.teams?.away;
     
-    console.log('extractModelFeatures - Teams:', { homeTeam, awayTeam });
+    console.log('Teams:', { homeTeam, awayTeam });
     
     const homeStats = gameData.team_statistics?.[homeTeam];
     const awayStats = gameData.team_statistics?.[awayTeam];
     
-    console.log('extractModelFeatures - Stats exist:', { 
-      homeStats: !!homeStats, 
-      awayStats: !!awayStats,
-      homeKeys: homeStats ? Object.keys(homeStats) : [],
-      awayKeys: awayStats ? Object.keys(awayStats) : []
-    });
+    console.log('Home stats structure:', homeStats);
+    console.log('Away stats structure:', awayStats);
 
     if (!homeStats || !awayStats) {
-      console.error('extractModelFeatures: Missing team statistics', { homeTeam, awayTeam });
+      console.error('extractModelFeatures: Missing team statistics');
       return null;
     }
 
@@ -205,12 +207,12 @@ export default function App() {
       neutral_script_epa_differential: (homeStats.offense?.epa_per_play?.overall || 0) - (awayStats.offense?.epa_per_play?.overall || 0)
     };
 
-    console.log('extractModelFeatures - Completed. Feature count:', Object.keys(features).length);
-    console.log('extractModelFeatures - Sample features:', {
-      home_epa_overall_rolling: features.home_epa_overall_rolling,
-      away_epa_overall_rolling: features.away_epa_overall_rolling,
-      epa_overall_differential: features.epa_overall_differential
+    console.log('Features extracted. Count:', Object.keys(features).length);
+    console.log('Sample features:', {
+      home_epa: features.home_epa_overall_rolling,
+      away_epa: features.away_epa_overall_rolling
     });
+    console.log('=== extractModelFeatures DEBUG END ===');
 
     return features;
   };
@@ -218,7 +220,6 @@ export default function App() {
   const fetchModelPredictions = async (features) => {
     try {
       addDebugLog('🔄 Fetching Python model predictions...');
-      console.log('Sending features to model API:', features);
       
       const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
         method: 'POST',
@@ -230,9 +231,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Model API error response:', errorText);
-        addDebugLog('❌ Model prediction failed', { status: response.status, error: errorText });
+        addDebugLog('❌ Model prediction failed', response.status);
         return null;
       }
 
@@ -247,10 +246,8 @@ export default function App() {
         return result.predictions;
       }
       
-      console.error('Model API returned unsuccessful result:', result);
       return null;
     } catch (error) {
-      console.error('Model prediction error:', error);
       addDebugLog('❌ Model prediction error', error.message);
       return null;
     }
@@ -323,8 +320,137 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
     { key: "icehockey_nhl", title: "NHL" },
   ];
 
-  // [Keep ALL your existing helper functions - fetchBackendDataForTeam, supplementGameDataFromBackend, etc.]
-  // I'm including the key ones below, add the rest from your working code
+  const fetchBackendDataForTeam = async (teamName, sport, year, week) => {
+    try {
+      let endpoint;
+      let params = "?year=" + year + "&week=" + week;
+      
+      if (sport === "americanfootball_nfl") {
+        endpoint = BACKEND_URL + "/api/nfl-enhanced-data";
+        params = "?season=" + year + "&week=" + week;
+      } else if (sport === "americanfootball_ncaaf") {
+        endpoint = BACKEND_URL + "/api/cfb-enhanced-data";
+      } else {
+        return null;
+      }
+      
+      const response = await fetch(endpoint + params);
+      if (!response.ok) return null;
+      
+      const data = await response.json();
+      if (data.error || !data.games) return null;
+      
+      return data.games;
+    } catch (err) {
+      addDebugLog('❌ Backend fetch error', err.message);
+      return null;
+    }
+  };
+
+  const supplementGameDataFromBackend = async (games, sport) => {
+    setBackendFetchStatus('fetching');
+    addDebugLog('🔄 Fetching backend data...', { sport, gameCount: games.length });
+    
+    const currentYear = new Date().getFullYear();
+    const estimatedWeek = 5;
+    
+    try {
+      const backendGames = await fetchBackendDataForTeam(null, sport, currentYear, estimatedWeek);
+      
+      if (!backendGames || backendGames.length === 0) {
+        setBackendFetchStatus('unavailable');
+        addDebugLog('⚠️ No backend data available');
+        return games;
+      }
+      
+      addDebugLog('✓ Backend data fetched', { count: backendGames.length });
+      
+      const supplementedGames = games.map(jsonGame => {
+        const matchingBackendGame = backendGames.find(bgGame => {
+          if (!bgGame.home_team || !bgGame.away_team) return false;
+          
+          const homeMatch = matchTeams(jsonGame.home_team, bgGame.home_team, 'nfl');
+          const awayMatch = matchTeams(jsonGame.away_team, bgGame.away_team, 'nfl');
+          
+          return homeMatch && awayMatch;
+        });
+        
+        if (matchingBackendGame) {
+          addDebugLog('✓ Backend data merged', {
+            game: `${jsonGame.away_team} @ ${jsonGame.home_team}`
+          });
+          
+          const mergedGameData = Object.assign({}, jsonGame.datasetGame);
+          
+          if (matchingBackendGame.team_data) {
+            mergedGameData.team_data = {
+              home: Object.assign({}, mergedGameData.team_data?.home || {}, matchingBackendGame.team_data.home),
+              away: Object.assign({}, mergedGameData.team_data?.away || {}, matchingBackendGame.team_data.away)
+            };
+          }
+          
+          if (matchingBackendGame.player_statistics) {
+            mergedGameData.player_statistics = Object.assign({}, mergedGameData.player_statistics || {}, matchingBackendGame.player_statistics);
+          }
+          
+          return Object.assign({}, jsonGame, {
+            datasetGame: mergedGameData,
+            hasBackendData: true
+          });
+        }
+        
+        return jsonGame;
+      });
+      
+      const mergedCount = supplementedGames.filter(g => g.hasBackendData).length;
+      setBackendFetchStatus(mergedCount > 0 ? 'success' : 'partial');
+      addDebugLog(`✓ Backend merge complete`, { mergedCount, totalGames: games.length });
+      
+      return supplementedGames;
+    } catch (err) {
+      setBackendFetchStatus('error');
+      addDebugLog('❌ Backend supplement error', err.message);
+      return games;
+    }
+  };
+
+  const fetchApiSportsOddsViaBackend = async (sport, gameDate) => {
+    if (!apiSportsKey) return null;
+
+    try {
+      const sportMap = {
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      
+      const sportPath = sportMap[sport] || 'football/nfl';
+      addDebugLog('🔄 Fetching API-Sports odds...', { sport: sportPath });
+      
+      const response = await fetch(
+        `${BACKEND_URL}/api/apisports-odds?sport=${encodeURIComponent(sportPath)}&date=${gameDate}`,
+        {
+          headers: {
+            'x-api-key': apiSportsKey
+          }
+        }
+      );
+
+      if (!response.ok) {
+        addDebugLog('❌ API-Sports odds failed', response.status);
+        return null;
+      }
+      
+      const data = await response.json();
+      addDebugLog('✓ API-Sports odds fetched', { count: data.odds?.length || 0 });
+      return data.odds || [];
+    } catch (error) {
+      addDebugLog('❌ API-Sports odds error', error.message);
+      return null;
+    }
+  };
 
   const fetchApiSportsInjuries = async (teamName, sport) => {
     if (!apiSportsKey || !teamName) {
@@ -363,7 +489,9 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       if (data.success && data.injuries && data.injuries.length > 0) {
         addDebugLog('✓ API-Sports injuries fetched', { 
           team: teamName, 
-          count: data.injuries.length
+          count: data.injuries.length,
+          teamId: data.teamId,
+          firstInjury: data.injuries[0]?.headline
         });
         
         return {
@@ -379,18 +507,270 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         };
       }
 
-      addDebugLog('⚠️ No API-Sports injury data returned', { team: teamName });
-      return { team: teamName, injuries: [], source: 'no-data' };
+      addDebugLog('⚠️ No API-Sports injury data returned', { 
+        team: teamName,
+        success: data.success,
+        count: data.count,
+        error: data.error
+      });
+      return { team: teamName, injuries: [], source: data.success === false ? 'api-error' : 'no-data' };
     } catch (error) {
-      addDebugLog('❌ API-Sports injury error', { team: teamName, error: error.message });
+      addDebugLog('❌ API-Sports injury error', { 
+        team: teamName, 
+        error: error.message,
+        stack: error.stack?.substring(0, 200)
+      });
       return { team: teamName, injuries: [], source: 'error' };
     }
+  };
+
+  const calculateFantasyProjections = (gameData, teamAbbr, opponentAbbr = null) => {
+    if (!gameData || !gameData.player_statistics || !gameData.player_statistics[teamAbbr]) {
+      return null;
+    }
+
+    const playerStats = gameData.player_statistics[teamAbbr];
+    const opponentStats = opponentAbbr ? gameData.team_statistics?.[opponentAbbr] : null;
+    
+    const projections = {
+      quarterbacks: [],
+      runningBacks: [],
+      receivers: []
+    };
+
+    const processedPlayers = new Set();
+
+    const getOpponentAdjustment = (statType, opponentStats) => {
+      if (!opponentStats || !opponentStats.defense) return 1.0;
+      
+      const defense = opponentStats.defense;
+      const adjustments = {};
+      
+      if (statType === 'passing' && defense.epa_per_play_allowed?.pass !== undefined) {
+        const epaPass = defense.epa_per_play_allowed.pass;
+        adjustments.epa_multiplier = Math.max(0.7, Math.min(1.3, 1 + (epaPass / 0.2)));
+      }
+      
+      if (statType === 'rushing' && defense.epa_per_play_allowed?.rush !== undefined) {
+        const epaRush = defense.epa_per_play_allowed.rush;
+        adjustments.epa_multiplier = Math.max(0.7, Math.min(1.3, 1 + (epaRush / 0.15)));
+      }
+      
+      if (defense.success_rate_allowed?.overall !== undefined) {
+        const successRate = defense.success_rate_allowed.overall;
+        adjustments.success_multiplier = Math.max(0.8, Math.min(1.2, successRate / 0.45));
+      }
+      
+      if (statType === 'passing' && defense.pressure_rate_generated !== undefined) {
+        const pressureRate = defense.pressure_rate_generated;
+        adjustments.pressure_multiplier = Math.max(0.8, Math.min(1.0, 1 - ((pressureRate - 0.25) * 0.8)));
+      }
+      
+      if (statType === 'passing' && defense.explosive_plays_allowed?.pass !== undefined) {
+        const explosiveAllowed = defense.explosive_plays_allowed.pass;
+        adjustments.explosive_multiplier = Math.max(0.9, Math.min(1.15, explosiveAllowed / 0.05));
+      }
+      
+      if (statType === 'rushing' && defense.explosive_plays_allowed?.rush !== undefined) {
+        const explosiveAllowed = defense.explosive_plays_allowed.rush;
+        adjustments.explosive_multiplier = Math.max(0.9, Math.min(1.15, explosiveAllowed / 0.03));
+      }
+      
+      let finalMultiplier = 1.0;
+      let weightSum = 0;
+      
+      if (adjustments.epa_multiplier) {
+        finalMultiplier += adjustments.epa_multiplier * 0.4;
+        weightSum += 0.4;
+      }
+      if (adjustments.success_multiplier) {
+        finalMultiplier += adjustments.success_multiplier * 0.3;
+        weightSum += 0.3;
+      }
+      if (adjustments.pressure_multiplier) {
+        finalMultiplier += adjustments.pressure_multiplier * 0.2;
+        weightSum += 0.2;
+      }
+      if (adjustments.explosive_multiplier) {
+        finalMultiplier += adjustments.explosive_multiplier * 0.1;
+        weightSum += 0.1;
+      }
+      
+      return weightSum > 0 ? (finalMultiplier - 1) / weightSum + 1 : 1.0;
+    };
+
+    if (playerStats.quarterbacks) {
+      playerStats.quarterbacks.forEach(qb => {
+        if (!qb.attempts || qb.attempts < 20) return;
+        if (processedPlayers.has(qb.player_name)) return;
+        processedPlayers.add(qb.player_name);
+        
+        const completionPct = qb.completions / qb.attempts;
+        const yardsPerAttempt = qb.yards / qb.attempts;
+        const tdRate = qb.touchdowns / qb.attempts;
+        
+        const baseAttempts = qb.attempts / 4;
+        const basePassYards = baseAttempts * yardsPerAttempt;
+        const basePassTDs = baseAttempts * tdRate;
+        
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats);
+        
+        const projectedAttempts = baseAttempts * passAdjustment;
+        const projectedPassYards = basePassYards * passAdjustment;
+        const projectedPassTDs = basePassTDs * passAdjustment;
+        
+        const projectedRushYards = qb.carries ? (qb.rush_yards / qb.carries) * 3 : 0;
+        
+        const passingPoints = (projectedPassYards * 0.04) + (projectedPassTDs * 4);
+        const rushingPoints = (projectedRushYards * 0.1) + (0.1 * 6);
+        const totalPoints = passingPoints + rushingPoints;
+        
+        let baseConfidence = qb.passer_rating_last3 > 85 ? 'High' : qb.passer_rating_last3 > 70 ? 'Medium' : 'Low';
+        const matchupFactor = passAdjustment;
+        
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
+          name: qb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          passYards: projectedPassYards.toFixed(0),
+          passTDs: projectedPassTDs.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
+          confidence: confidence
+        };
+
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough matchup' : 'Neutral matchup';
+        }
+        
+        projections.quarterbacks.push(projection);
+      });
+    }
+
+    if (playerStats.running_backs_top3) {
+      playerStats.running_backs_top3.forEach(rb => {
+        if (!rb.carries || rb.carries < 10) return;
+        if (processedPlayers.has(rb.player_name)) return;
+        processedPlayers.add(rb.player_name);
+        
+        const ypc = rb.rush_yards / rb.carries;
+        const carriesPerGame = rb.carries / 4;
+        
+        const rushAdjustment = getOpponentAdjustment('rushing', opponentStats);
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats);
+        
+        const projectedRushYards = (carriesPerGame * ypc) * rushAdjustment;
+        const projectedRushTDs = ((rb.rush_tds / 4) || 0.3) * rushAdjustment;
+        
+        const receptions = rb.receptions || 0;
+        const recYards = rb.yards || 0;
+        const projectedReceptions = (receptions / 4) * passAdjustment;
+        const projectedRecYards = (recYards / 4) * passAdjustment;
+        
+        const rushingPoints = (projectedRushYards * 0.1) + (projectedRushTDs * 6);
+        const receivingPoints = (projectedReceptions * 1) + (projectedRecYards * 0.1) + (0.2 * 6);
+        const totalPoints = rushingPoints + receivingPoints;
+        
+        let baseConfidence = carriesPerGame > 15 ? 'High' : carriesPerGame > 10 ? 'Medium' : 'Low';
+        const matchupFactor = rushAdjustment;
+        
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
+          name: rb.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          rushYards: projectedRushYards.toFixed(0),
+          receptions: projectedReceptions.toFixed(1),
+          recYards: projectedRecYards.toFixed(0),
+          confidence: confidence
+        };
+
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable rush matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough rush defense' : 'Neutral matchup';
+        }
+        
+        projections.runningBacks.push(projection);
+      });
+    }
+
+    if (playerStats.receivers_tes_top5) {
+      playerStats.receivers_tes_top5.forEach(receiver => {
+        if (!receiver.targets || receiver.targets < 8) return;
+        if (processedPlayers.has(receiver.player_name)) return;
+        processedPlayers.add(receiver.player_name);
+        
+        const targetsPerGame = receiver.targets / 4;
+        const receptionRate = receiver.receptions / receiver.targets;
+        const yardsPerReception = receiver.yards / receiver.receptions;
+        
+        const passAdjustment = getOpponentAdjustment('passing', opponentStats);
+        
+        const projectedReceptions = (targetsPerGame * receptionRate) * passAdjustment;
+        const projectedYards = projectedReceptions * yardsPerReception;
+        const projectedTDs = ((receiver.touchdowns / 4) || 0.3) * passAdjustment;
+        
+        const totalPoints = (projectedReceptions * 1) + (projectedYards * 0.1) + (projectedTDs * 6);
+        
+        let baseConfidence = receiver.target_share_pct > 20 ? 'High' : receiver.target_share_pct > 15 ? 'Medium' : 'Low';
+        const matchupFactor = passAdjustment;
+        
+        let confidence = baseConfidence;
+        if (matchupFactor > 1.1) {
+          confidence = baseConfidence === 'Low' ? 'Medium' : baseConfidence === 'Medium' ? 'High' : 'High';
+        } else if (matchupFactor < 0.9) {
+          confidence = baseConfidence === 'High' ? 'Medium' : baseConfidence === 'Medium' ? 'Low' : 'Low';
+        }
+        
+        const projection = {
+          name: receiver.player_name,
+          projectedPoints: totalPoints.toFixed(1),
+          receptions: projectedReceptions.toFixed(1),
+          yards: projectedYards.toFixed(0),
+          touchdowns: projectedTDs.toFixed(1),
+          confidence: confidence
+        };
+
+        if (opponentStats) {
+          projection.matchupAdjustment = matchupFactor.toFixed(2);
+          projection.matchupNotes = matchupFactor > 1.1 ? 'Favorable pass matchup' : 
+                                   matchupFactor < 0.9 ? 'Tough pass defense' : 'Neutral matchup';
+        }
+        
+        projections.receivers.push(projection);
+      });
+    }
+
+    return projections;
   };
 
   const quantifyInjuryImpact = (espnData, isCFB) => {
     if (!espnData || !espnData.home || !espnData.away) {
       return { home: 0, away: 0, total: 0, differential: 0, confidenceReduction: 0, details: [] };
     }
+
+    const cfbImpactScores = {
+      'qb': 7.0, 'quarterback': 7.0,
+      'rb': 2.0, 'running back': 2.0,
+      'wr': 1.5, 'wide receiver': 1.5, 'receiver': 1.5,
+      'te': 1.0, 'tight end': 1.0,
+      'ol': 1.0, 'offensive line': 1.0,
+      'lt': 1.2, 'lg': 0.9, 'c': 1.0, 'rg': 0.9, 'rt': 1.2,
+      'de': 0.8, 'dt': 0.7, 'lb': 0.7, 'cb': 0.8, 's': 0.7, 'safety': 0.7
+    };
 
     const nflImpactScores = {
       'qb': 5.5, 'quarterback': 5.5,
@@ -401,6 +781,8 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       'lt': 0.7, 'lg': 0.4, 'c': 0.5, 'rg': 0.4, 'rt': 0.7,
       'de': 0.5, 'dt': 0.4, 'lb': 0.4, 'cb': 0.5, 's': 0.4, 'safety': 0.4
     };
+
+    const impactScores = isCFB ? cfbImpactScores : nflImpactScores;
 
     const calculateInjuries = (injuries) => {
       const positionCount = {};
@@ -414,9 +796,9 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                       headline.includes('doubtful') ? 0.8 : 
                       headline.includes('questionable') ? 0.4 : 0.5;
 
-        for (const pos in nflImpactScores) {
+        for (const pos in impactScores) {
           if (headline.includes(pos)) {
-            impact = Math.max(impact, nflImpactScores[pos]);
+            impact = Math.max(impact, impactScores[pos]);
             positionCount[pos] = (positionCount[pos] || 0) + 1;
             details.push({ 
               headline: inj.headline, 
@@ -461,6 +843,38 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
     };
   };
 
+  const validateDataRanges = (compiledData) => {
+    const warnings = [];
+    
+    if (compiledData.sport === 'NFL') {
+      const homeEPA = compiledData.team_statistics?.home?.epa;
+      const awayEPA = compiledData.team_statistics?.away?.epa;
+      
+      if (homeEPA !== undefined && awayEPA !== undefined) {
+        if (Math.abs(homeEPA) < 0.01 && Math.abs(awayEPA) < 0.01) {
+          warnings.push("WARNING: EPA values unusually small (typical range: -0.15 to +0.15). Data may be incomplete or represent limited sample.");
+        }
+        if (Math.abs(homeEPA) > 0.5 || Math.abs(awayEPA) > 0.5) {
+          warnings.push("WARNING: EPA values unusually high. Verify data accuracy.");
+        }
+      }
+    }
+    
+    if (compiledData.sport === 'CFB') {
+      const homeSP = compiledData.team_statistics?.home?.sp_plus;
+      const awaySP = compiledData.team_statistics?.away?.sp_plus;
+      
+      if (homeSP !== undefined && awaySP !== undefined) {
+        const spPlusDiff = Math.abs(homeSP - awaySP);
+        if (spPlusDiff > 50) {
+          warnings.push("WARNING: SP+ differential extremely large (" + spPlusDiff.toFixed(1) + "). This suggests a major mismatch.");
+        }
+      }
+    }
+    
+    return warnings;
+  };
+
   const compileAllGameData = async (game, gameData, espnData, marketData, fantasyData) => {
     const isCFB = gameData.team_data !== undefined;
     
@@ -482,6 +896,13 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
           notes: manualScores.notes || "Manual injury scoring applied"
         }
       };
+      
+      addDebugLog('✓ Manual injury scores applied', {
+        game: `${game.away_team} @ ${game.home_team}`,
+        home: homeImpact,
+        away: awayImpact,
+        differential: homeImpact - awayImpact
+      });
     } else {
       injuryImpact = espnData ? quantifyInjuryImpact(espnData, isCFB) : null;
     }
@@ -555,20 +976,60 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       }
     };
     
-    // Handle NFL vs CFB stats structure
-    if (!isCFB) {
-      const homeTeam = gameData.teams?.home;
-      const awayTeam = gameData.teams?.away;
-      const homeStats = gameData.team_statistics?.[homeTeam];
-      const awayStats = gameData.team_statistics?.[awayTeam];
-      
-      if (homeStats && awayStats) {
+    if (isCFB) {
+      try {
+        compiled.team_statistics = {
+          home: {
+            sp_plus: gameData.team_data?.home?.sp_overall || 0,
+            off_success_rate: gameData.team_data?.home?.off_success_rate || 0,
+            def_success_rate: gameData.team_data?.home?.def_success_rate || 0,
+            explosiveness: gameData.team_data?.home?.off_explosiveness || 0,
+            havoc_rate: gameData.team_data?.home?.havoc_rate || 0,
+            ppg: gameData.team_data?.home?.points_per_game || 0
+          },
+          away: {
+            sp_plus: gameData.team_data?.away?.sp_overall || 0,
+            off_success_rate: gameData.team_data?.away?.off_success_rate || 0,
+            def_success_rate: gameData.team_data?.away?.def_success_rate || 0,
+            explosiveness: gameData.team_data?.away?.off_explosiveness || 0,
+            havoc_rate: gameData.team_data?.away?.havoc_rate || 0,
+            ppg: gameData.team_data?.away?.points_per_game || 0
+          }
+        };
+      } catch (e) {
+        addDebugLog('❌ CFB data extraction error', e.message);
+      }
+    } else {
+      try {
+        const homeTeam = gameData.teams?.home;
+        const awayTeam = gameData.teams?.away;
+        
+        if (!homeTeam || !awayTeam) {
+          addDebugLog('❌ Team abbreviations missing', { homeTeam, awayTeam });
+          return compiled;
+        }
+        
+        const homeStats = gameData.team_statistics?.[homeTeam];
+        const awayStats = gameData.team_statistics?.[awayTeam];
+        const homePlayerStats = gameData.player_statistics?.[homeTeam];
+        const awayPlayerStats = gameData.player_statistics?.[awayTeam];
+        
+        if (!homeStats || !awayStats) {
+          addDebugLog('❌ Team statistics not found', { 
+            homeTeam, 
+            awayTeam,
+            availableTeams: Object.keys(gameData.team_statistics || {})
+          });
+          return compiled;
+        }
+        
         compiled.team_statistics = {
           home: {
             team_abbr: homeTeam,
             epa: homeStats.offense?.epa_per_play?.overall || 0,
             success_rate: homeStats.offense?.success_rate?.overall || 0,
             explosive_pct: homeStats.offense?.explosive_play_share?.overall || 0,
+            pass_block_win_rate: homePlayerStats?.offensive_line_unit?.pass_block_win_rate || 0,
             third_down_rate: homeStats.offense?.third_down?.overall || 0,
             redzone_td_rate: homeStats.offense?.red_zone?.td_rate || 0
           },
@@ -577,26 +1038,109 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
             epa: awayStats.offense?.epa_per_play?.overall || 0,
             success_rate: awayStats.offense?.success_rate?.overall || 0,
             explosive_pct: awayStats.offense?.explosive_play_share?.overall || 0,
+            pass_block_win_rate: awayPlayerStats?.offensive_line_unit?.pass_block_win_rate || 0,
             third_down_rate: awayStats.offense?.third_down?.overall || 0,
             redzone_td_rate: awayStats.offense?.red_zone?.td_rate || 0
           }
         };
+        
+        addDebugLog('✓ NFL statistics compiled', { 
+          home: homeTeam, 
+          away: awayTeam,
+          homeEPA: compiled.team_statistics.home.epa,
+          awayEPA: compiled.team_statistics.away.epa,
+          homeExplosive: compiled.team_statistics.home.explosive_pct,
+          awayExplosive: compiled.team_statistics.away.explosive_pct
+        });
+      } catch (e) {
+        addDebugLog('❌ NFL data extraction error', e.stack);
       }
     }
     
     if (marketData) {
       compiled.data_quality.market_odds_available = true;
+      
       if (marketData.source === 'the-odds-api') {
         const spread = marketData.spread?.outcomes || [];
+        const total = marketData.total?.outcomes || [];
+        const moneyline = marketData.moneyline?.outcomes || [];
+        
         const homeSpread = spread.find(o => o.name === game.home_team);
+        
         compiled.market_odds = {
           source: 'the-odds-api',
-          spread: homeSpread ? homeSpread.point : null
+          spread: homeSpread ? homeSpread.point : null,
+          total: total.length > 0 ? total[0].point : null,
+          home_moneyline: moneyline.find(o => o.name === game.home_team)?.price,
+          away_moneyline: moneyline.find(o => o.name === game.away_team)?.price
+        };
+      } else if (marketData.source === 'api-sports' && marketData.odds && marketData.odds.length > 0) {
+        compiled.market_odds = {
+          source: 'api-sports',
+          raw: marketData.odds[0]
         };
       }
     }
     
     return compiled;
+  };
+
+  const getTeamAbbreviation = (teamName, sport) => {
+    if (!teamName || typeof teamName !== 'string') return 'unknown';
+    
+    const resolved = resolveTeamName(teamName, sport === 'americanfootball_ncaaf' ? 'cfb' : 'nfl');
+    return resolved.abbr || teamName.toLowerCase().replace(/[^a-z]/g, '').slice(0, 3);
+  };
+
+  const fetchESPNData = async (teamName, sport) => {
+    if (!teamName || typeof teamName !== 'string') {
+      return { team: teamName || 'Unknown', injuries: [], source: 'none' };
+    }
+    
+    try {
+      const sportMap = { 
+        'americanfootball_nfl': 'football/nfl',
+        'americanfootball_ncaaf': 'football/college-football',
+        'basketball_nba': 'basketball/nba',
+        'baseball_mlb': 'baseball/mlb',
+        'icehockey_nhl': 'hockey/nhl'
+      };
+      const sportPath = sportMap[sport] || 'football/nfl';
+      const teamAbbr = getTeamAbbreviation(teamName, sport);
+      
+      addDebugLog('🔄 Fetching ESPN injuries...', { team: teamAbbr });
+      
+      const proxyUrl = BACKEND_URL + "/api/espn-proxy?sport=" + encodeURIComponent(sportPath) + "&team=" + encodeURIComponent(teamAbbr);
+      
+      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(10000) });
+
+      if (!response.ok) {
+        addDebugLog('❌ ESPN fetch failed', { team: teamName, status: response.status });
+        return { team: teamName, injuries: [], source: 'failed' };
+      }
+
+      const data = await response.json();
+      
+      if (!data.success || !data.injuries || data.injuries.length === 0) {
+        addDebugLog('⚠️ No ESPN injury data', { team: teamName });
+        return { team: teamName, injuries: [], source: data.source || 'no-data' };
+      }
+      
+      addDebugLog('✓ ESPN injuries fetched', { team: teamName, count: data.injuries.length });
+      
+      return { 
+        team: teamName, 
+        injuries: data.injuries || [],
+        source: data.source || 'espn'
+      };
+    } catch (error) {
+      addDebugLog('❌ ESPN fetch error', { team: teamName, error: error.message });
+      return { 
+        team: teamName, 
+        injuries: [], 
+        source: 'error'
+      };
+    }
   };
 
   const parseDataset = () => {
@@ -627,6 +1171,49 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         return;
       }
 
+      let gamesWithIds = [];
+      let useApiSportsForOdds = false;
+
+      if (apiKey.trim()) {
+        try {
+          addDebugLog('🔄 Fetching from The Odds API...');
+          const url = "https://api.the-odds-api.com/v4/sports/" + selectedSport + "/odds?apiKey=" + apiKey + "&regions=us&markets=h2h,spreads,totals&oddsFormat=american";
+          const response = await fetch(url);
+
+          if (response.ok) {
+            const oddsData = await response.json();
+            if (oddsData && oddsData.length > 0) {
+              gamesWithIds = oddsData.map((game, index) => ({
+                ...game,
+                id: game.id || (game.sport_key + "_" + index)
+              }));
+              addDebugLog('✓ The Odds API data fetched', { count: gamesWithIds.length });
+            }
+          }
+        } catch (apiError) {
+          addDebugLog('⚠️ The Odds API unavailable', apiError.message);
+        }
+      }
+
+      if (gamesWithIds.length === 0 && apiSportsKey) {
+        const today = new Date().toISOString().split('T')[0];
+        const apiSportsOdds = await fetchApiSportsOddsViaBackend(selectedSport, today);
+        
+        if (apiSportsOdds && apiSportsOdds.length > 0) {
+          useApiSportsForOdds = true;
+          gamesWithIds = apiSportsOdds.map((odd, index) => ({
+            id: odd.game?.id || ("apisports_" + index),
+            sport_key: selectedSport,
+            commence_time: odd.game?.date || new Date().toISOString(),
+            home_team: odd.teams?.home?.name || 'Unknown',
+            away_team: odd.teams?.away?.name || 'Unknown',
+            bookmakers: [],
+            apiSportsOdds: [odd]
+          }));
+          addDebugLog('✓ API-Sports odds loaded', { count: gamesWithIds.length });
+        }
+      }
+
       const datasetGames = parsedDataset.games.map((game, index) => {
         let homeTeam, awayTeam, gameTime;
         
@@ -651,10 +1238,46 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         };
       });
 
-      setGames(datasetGames);
-      addDebugLog('✓ Games loaded', { totalGames: datasetGames.length });
+      addDebugLog('✓ Dataset games processed', { count: datasetGames.length });
 
-      for (const game of datasetGames) {
+      if (gamesWithIds.length > 0) {
+        addDebugLog('🔄 Matching odds to dataset games...');
+        let matchCount = 0;
+        
+        gamesWithIds = gamesWithIds.map(oddsGame => {
+          const matchingDatasetGame = datasetGames.find(dg => {
+            if (!dg.home_team || !dg.away_team || !oddsGame.home_team || !oddsGame.away_team) {
+              return false;
+            }
+            
+            const homeMatch = matchTeams(dg.home_team, oddsGame.home_team, 'nfl');
+            const awayMatch = matchTeams(dg.away_team, oddsGame.away_team, 'nfl');
+            
+            return homeMatch && awayMatch;
+          });
+          
+          if (matchingDatasetGame) {
+            matchCount++;
+            return Object.assign({}, oddsGame, {
+              datasetGame: matchingDatasetGame.datasetGame,
+              useApiSportsOdds: useApiSportsForOdds
+            });
+          }
+          return Object.assign({}, oddsGame, { useApiSportsOdds: useApiSportsForOdds });
+        });
+        
+        addDebugLog('✓ Odds matching complete', { matched: matchCount, total: gamesWithIds.length });
+      } else {
+        gamesWithIds = datasetGames;
+        addDebugLog('⚠️ No odds data, using dataset games only');
+      }
+
+      gamesWithIds = await supplementGameDataFromBackend(gamesWithIds, selectedSport);
+      
+      setGames(gamesWithIds);
+      addDebugLog('✓ Games loaded', { totalGames: gamesWithIds.length });
+
+      for (const game of gamesWithIds) {
         const hasValidTeams = game.home_team && game.away_team && 
                              typeof game.home_team === 'string' && 
                              typeof game.away_team === 'string';
@@ -662,8 +1285,8 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         if (!hasValidTeams) continue;
         
         Promise.all([
-          apiSportsKey ? fetchApiSportsInjuries(game.home_team, selectedSport) : Promise.resolve({ team: game.home_team, injuries: [], source: 'none' }),
-          apiSportsKey ? fetchApiSportsInjuries(game.away_team, selectedSport) : Promise.resolve({ team: game.away_team, injuries: [], source: 'none' })
+          apiSportsKey ? fetchApiSportsInjuries(game.home_team, selectedSport) : fetchESPNData(game.home_team, selectedSport),
+          apiSportsKey ? fetchApiSportsInjuries(game.away_team, selectedSport) : fetchESPNData(game.away_team, selectedSport)
         ]).then(([homeData, awayData]) => {
           setEspnDataCache(prev => (Object.assign({}, prev, {
             [game.id]: { 
@@ -671,6 +1294,14 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
               away: awayData
             }
           })));
+          
+          addDebugLog('✓ Injury data cached', {
+            game: `${game.away_team} @ ${game.home_team}`,
+            homeSource: homeData.source,
+            awaySource: awayData.source,
+            homeCount: homeData.injuries.length,
+            awayCount: awayData.injuries.length
+          });
         });
       }
 
@@ -690,37 +1321,60 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       const gameData = game.datasetGame;
       if (!gameData) throw new Error("No dataset found");
 
-      // DEBUG: Feature extraction
-      console.log('=== DEBUG FEATURE EXTRACTION ===');
-      console.log('Game data teams:', gameData.teams);
-      console.log('Team statistics keys:', Object.keys(gameData.team_statistics || {}));
-      console.log('Home team stats:', gameData.team_statistics?.[gameData.teams?.home]);
-      
-      const testFeatures = extractModelFeatures(gameData);
-      console.log('Extracted features:', testFeatures);
-      console.log('Feature count:', testFeatures ? Object.keys(testFeatures).length : 0);
-      console.log('First 5 features:', testFeatures ? Object.fromEntries(Object.entries(testFeatures).slice(0, 5)) : null);
-      console.log('=== END DEBUG ===');
-
       const espnData = espnDataCache[game.id];
       
+      addDebugLog('Injury data check', {
+        available: !!espnData,
+        homeInjuries: espnData?.home?.injuries?.length || 0,
+        awayInjuries: espnData?.away?.injuries?.length || 0,
+        homeSource: espnData?.home?.source,
+        awaySource: espnData?.away?.source
+      });
+      
       let marketData = null;
-      if (game.bookmakers && game.bookmakers.length > 0) {
+      let hasMarketData = false;
+      
+      if (game.useApiSportsOdds && game.apiSportsOdds && game.apiSportsOdds.length > 0) {
+        marketData = {
+          source: 'api-sports',
+          odds: game.apiSportsOdds
+        };
+        hasMarketData = true;
+      } else if (game.bookmakers && game.bookmakers.length > 0) {
         const book = game.bookmakers[0];
         marketData = {
           source: 'the-odds-api',
           spread: book.markets.find(m => m.key === 'spreads'),
-          total: book.markets.find(m => m.key === 'totals')
+          total: book.markets.find(m => m.key === 'totals'),
+          moneyline: book.markets.find(m => m.key === 'h2h')
         };
+        hasMarketData = true;
       }
       
       const isCFB = gameData.team_data !== undefined;
       let fantasyData = null;
+      
+      if (!isCFB && gameData.player_statistics) {
+        const homeTeam = gameData.teams?.home;
+        const awayTeam = gameData.teams?.away;
+        
+        if (homeTeam && awayTeam) {
+          fantasyData = {
+            home: calculateFantasyProjections(gameData, homeTeam, awayTeam),
+            away: calculateFantasyProjections(gameData, awayTeam, homeTeam)
+          };
+        }
+      }
 
       const compiledData = await compileAllGameData(game, gameData, espnData, marketData, fantasyData);
+      const dataWarnings = validateDataRanges(compiledData);
       
       addDebugLog('✓ Data compiled', { 
-        hasModelPredictions: compiledData.data_quality.model_predictions_available
+        hasMarket: compiledData.data_quality.market_odds_available,
+        hasInjuries: compiledData.data_quality.injury_data_available,
+        hasModelPredictions: compiledData.data_quality.model_predictions_available,
+        injuryDifferential: compiledData.injuries.net_differential_points,
+        warnings: dataWarnings.length
       });
 
       let prompt = "=== NFL GAME ANALYSIS ===\n";
@@ -728,13 +1382,44 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       
       if (compiledData.model_predictions?.available) {
         prompt += "=== PYTHON ML MODEL PREDICTIONS ===\n";
-        prompt += `Spread: Home ${compiledData.model_predictions.spread.value > 0 ? 'favored by' : 'underdog by'} ${Math.abs(compiledData.model_predictions.spread.value).toFixed(1)} points\n`;
-        prompt += `Win Probability: Home ${(compiledData.model_predictions.win_probability.home * 100).toFixed(1)}% / Away ${(compiledData.model_predictions.win_probability.away * 100).toFixed(1)}%\n\n`;
+        prompt += `Trained on 2021-2024 data, validated on 2024 season\n\n`;
+        prompt += `**Spread:**\n`;
+        prompt += `- Model: Home ${compiledData.model_predictions.spread.value > 0 ? 'favored by' : 'underdog by'} ${Math.abs(compiledData.model_predictions.spread.value).toFixed(1)} points\n`;
+        prompt += `- Confidence: ${compiledData.model_predictions.spread.confidence} (R² = ${compiledData.model_predictions.spread.model_r2})\n\n`;
+        
+        prompt += `**Total:**\n`;
+        prompt += `- Model: ${compiledData.model_predictions.total.value.toFixed(1)} points\n`;
+        prompt += `- Confidence: ${compiledData.model_predictions.total.confidence} (R² = ${compiledData.model_predictions.total.model_r2}) ⚠️ LOW\n\n`;
+        
+        prompt += `**Win Probability:**\n`;
+        prompt += `- Home: ${(compiledData.model_predictions.win_probability.home * 100).toFixed(1)}%\n`;
+        prompt += `- Away: ${(compiledData.model_predictions.win_probability.away * 100).toFixed(1)}%\n`;
+        prompt += `- Confidence: ${compiledData.model_predictions.win_probability.confidence} (${(compiledData.model_predictions.win_probability.validation_accuracy * 100).toFixed(1)}% validation accuracy) ✓ RELIABLE\n\n`;
       }
       
       prompt += "=== FULL COMPILED DATA ===\n";
       prompt += JSON.stringify(compiledData, null, 2) + "\n\n";
-      prompt += "Provide comprehensive analysis. Educational purposes only.\n";
+      
+      if (dataWarnings.length > 0) {
+        prompt += "=== DATA QUALITY ALERTS ===\n";
+        dataWarnings.forEach(warning => {
+          prompt += "• " + warning + "\n";
+        });
+        prompt += "\n";
+      }
+      
+      prompt += "=== ANALYSIS REQUIREMENTS ===\n\n";
+      prompt += "Provide a comprehensive analysis following the output structure in your system prompt.\n\n";
+      prompt += "Key focus areas:\n";
+      prompt += "1. Model predictions assessment - how much to trust them\n";
+      prompt += "2. Statistical edges - identify who has advantages and why\n";
+      prompt += "3. Injury impact - quantify using the pre-calculated point values\n";
+      if (hasMarketData) {
+        prompt += "4. Market comparison - explain model vs market differences\n";
+      }
+      prompt += "5. Risk factors - what could invalidate the prediction\n";
+      prompt += "6. Confidence assessment - justify your confidence level\n\n";
+      prompt += "Remember: Show all calculations explicitly. Educational purposes only.\n";
 
       const response = await fetch("https://oi-server.onrender.com/chat/completions", {
         method: "POST",
@@ -752,20 +1437,26 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         }),
       });
 
+      if (!response.ok) {
+        throw new Error("API returned " + response.status);
+      }
+
       const result = await response.json();
-      const analysis = result.choices[0]?.message?.content;
+      const analysis = result.choices[0]?.message?.content || "Analysis unavailable";
+
+      addDebugLog('✓ Analysis complete');
 
       setAnalyses(prev => (Object.assign({}, prev, {
         [game.id]: { 
           loading: false, 
           text: analysis,
           compiledData: compiledData,
+          fantasyData: fantasyData,
+          dataWarnings: dataWarnings,
           modelPredictions: compiledData.model_predictions
         }
       })));
-
     } catch (err) {
-      console.error('Analysis error:', err);
       addDebugLog('❌ Analysis error', err.message);
       setAnalyses(prev => (Object.assign({}, prev, { [game.id]: { loading: false, text: "Error: " + err.message } })));
     }
@@ -805,7 +1496,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
         <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v4.0</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          ML Model Integration + Deep Analysis
+          ML Model Integration + Deep Analysis + Manual Injury Input + Fantasy Projections
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -834,15 +1525,55 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
           
           <div style={{ marginBottom: "20px", padding: "15px", backgroundColor: "#e8f5e9", borderRadius: "6px", border: "2px solid #4caf50" }}>
             <div style={{ fontSize: "14px", fontWeight: "600", color: "#2e7d32", marginBottom: "8px" }}>
-              API-Sports (Injuries)
+              ⭐ RECOMMENDED: API-Sports (Injuries + Odds + Stats)
+            </div>
+            <div style={{ fontSize: "12px", color: "#495057", marginBottom: "10px" }}>
+              Secure backend proxy for API-Sports integration
+              <br />
+              Provides: <strong>Injuries</strong>, <strong>Odds</strong>, <strong>Players</strong>, <strong>Stats</strong>
+              <br />
+              Sign up at: <a href="https://api-sports.io" target="_blank" rel="noopener noreferrer" style={{ color: "#2e7d32", fontWeight: "600" }}>api-sports.io</a>
             </div>
             <input
               type="password"
               value={apiSportsKey}
               onChange={(e) => setApiSportsKey(e.target.value)}
-              placeholder="API-Sports Key"
+              placeholder="API-Sports Key (required for injuries)"
               style={{ width: "100%", padding: "8px", border: "2px solid #4caf50", borderRadius: "4px", marginBottom: "8px" }}
             />
+            {apiSportsKey && (
+              <div style={{ fontSize: "11px", color: "#155724", fontWeight: "600" }}>
+                ✓ API-Sports enabled - injuries will be fetched automatically
+              </div>
+            )}
+          </div>
+          
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "15px", marginTop: "15px" }}>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>
+                The Odds API Key (optional - market odds)
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="The Odds API Key"
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
+              />
+              <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>
+                Get your key at: <a href="https://the-odds-api.com" target="_blank" rel="noopener noreferrer">the-odds-api.com</a>
+              </div>
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: "12px", fontWeight: "600", marginBottom: "5px", color: "#666" }}>Sport</label>
+              <select 
+                value={selectedSport} 
+                onChange={(e) => setSelectedSport(e.target.value)} 
+                style={{ width: "100%", padding: "8px", border: "1px solid #ddd", borderRadius: "4px" }}
+              >
+                {sports.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}
+              </select>
+            </div>
           </div>
 
           <button 
@@ -850,7 +1581,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
             disabled={loading || !datasetLoaded} 
             style={{ marginTop: "15px", padding: "10px 20px", backgroundColor: (loading || !datasetLoaded) ? "#ccc" : "#0066cc", color: "white", border: "none", borderRadius: "4px", fontWeight: "600", cursor: (loading || !datasetLoaded) ? "not-allowed" : "pointer" }}
           >
-            {loading ? "Loading..." : "Load Games"}
+            {loading ? "Loading..." : "Load Games & Fetch Data"}
           </button>
         </div>
 
@@ -879,6 +1610,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
 
         {games.map(game => {
           const analysis = analyses[game.id];
+          const manualScores = manualInjuryScores[game.id] || {};
 
           return (
             <div key={game.id} style={{ backgroundColor: "white", borderRadius: "8px", marginBottom: "20px", boxShadow: "0 2px 4px rgba(0,0,0,0.1)" }}>
@@ -886,6 +1618,9 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
                     <h3 style={{ margin: 0 }}>{game.away_team} @ {game.home_team}</h3>
+                    <div style={{ fontSize: "13px", color: "#666", marginTop: "4px" }}>
+                      {new Date(game.commence_time).toLocaleString()}
+                    </div>
                   </div>
                   <button 
                     onClick={() => analyzeGame(game)} 
@@ -895,19 +1630,121 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                     {analysis?.loading ? "Analyzing..." : "Analyze with ML Model"}
                   </button>
                 </div>
+                
+                <div style={{ marginTop: "15px", padding: "15px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "600", marginBottom: "10px", color: "#856404" }}>
+                    📋 Manual Injury Impact Scoring (Optional)
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#856404", marginBottom: "12px" }}>
+                    Input injury point values manually for precise control. Leave blank for automated calculation.
+                    <br /><strong>Guidelines:</strong> QB (4-8 pts), Skill (1-3 pts), OL/Defense (0.5-2 pts)
+                  </div>
+                  
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr", gap: "10px", alignItems: "end" }}>
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        {game.away_team} Injury Impact
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="20"
+                        value={manualScores.away || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], away: e.target.value }
+                        }))}
+                        placeholder="0.0"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        {game.home_team} Injury Impact
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="20"
+                        value={manualScores.home || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], home: e.target.value }
+                        }))}
+                        placeholder="0.0"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label style={{ display: "block", fontSize: "11px", fontWeight: "600", marginBottom: "4px", color: "#856404" }}>
+                        Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={manualScores.notes || ''}
+                        onChange={(e) => setManualInjuryScores(prev => ({
+                          ...prev,
+                          [game.id]: { ...prev[game.id], notes: e.target.value }
+                        }))}
+                        placeholder="e.g., Starting QB out, backup solid"
+                        style={{ width: "100%", padding: "6px", border: "1px solid #ffc107", borderRadius: "4px", fontSize: "12px" }}
+                      />
+                    </div>
+                  </div>
+                  
+                  {(manualScores.home || manualScores.away) && (
+                    <div style={{ marginTop: "8px", padding: "8px", backgroundColor: "#d4edda", borderRadius: "4px", fontSize: "11px", color: "#155724" }}>
+                      <strong>Manual scoring active:</strong> 
+                      {manualScores.away && ` ${game.away_team}: ${manualScores.away} pts`}
+                      {manualScores.home && ` ${game.home_team}: ${manualScores.home} pts`}
+                      {(parseFloat(manualScores.home || 0) - parseFloat(manualScores.away || 0)) !== 0 && 
+                        ` (Net: ${(parseFloat(manualScores.home || 0) - parseFloat(manualScores.away || 0)).toFixed(1)} pt edge)`
+                      }
+                    </div>
+                  )}
+                  
+                  <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
+                    <button
+                      onClick={() => setManualInjuryScores(prev => {
+                        const newScores = { ...prev };
+                        delete newScores[game.id];
+                        return newScores;
+                      })}
+                      style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "#6c757d", color: "white", border: "none", borderRadius: "3px", cursor: "pointer" }}
+                    >
+                      Clear Manual Scores
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div style={{ padding: "15px" }}>
                 {analysis?.modelPredictions?.available && (
                   <div style={{ padding: "15px", backgroundColor: "#e3f2fd", borderRadius: "6px", marginBottom: "15px", border: "2px solid #1976d2" }}>
                     <h4 style={{ margin: "0 0 10px 0", color: "#1976d2" }}>
-                      ML Model Predictions
+                      🤖 Python ML Model Predictions (Trained 2021-2024)
                     </h4>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "15px" }}>
                       <div>
                         <strong>Spread</strong>
                         <p style={{ margin: "5px 0", fontSize: "18px", fontWeight: "600" }}>
                           {analysis.modelPredictions.spread.value > 0 ? '+' : ''}{analysis.modelPredictions.spread.value.toFixed(1)}
+                        </p>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#666" }}>
+                          {analysis.modelPredictions.spread.confidence} confidence (R²: {analysis.modelPredictions.spread.model_r2})
+                        </p>
+                      </div>
+                      <div>
+                        <strong>Total</strong>
+                        <p style={{ margin: "5px 0", fontSize: "18px", fontWeight: "600" }}>
+                          {analysis.modelPredictions.total.value.toFixed(1)}
+                        </p>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#dc3545" }}>
+                          ⚠️ {analysis.modelPredictions.total.confidence} confidence
                         </p>
                       </div>
                       <div>
@@ -916,8 +1753,77 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                           Home: <strong>{(analysis.modelPredictions.win_probability.home * 100).toFixed(1)}%</strong><br/>
                           Away: <strong>{(analysis.modelPredictions.win_probability.away * 100).toFixed(1)}%</strong>
                         </p>
+                        <p style={{ margin: 0, fontSize: "11px", color: "#28a745" }}>
+                          ✓ 62.5% validation accuracy
+                        </p>
                       </div>
                     </div>
+                  </div>
+                )}
+
+                {analysis?.compiledData && (
+                  <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#f8f9fa", borderRadius: "6px", border: "1px solid #dee2e6" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "8px", color: "#495057" }}>
+                      Data Compilation Status:
+                    </div>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#d4edda", color: "#155724", borderRadius: "4px", fontWeight: "600" }}>
+                        ✓ Dataset Extracted
+                      </span>
+                      {analysis.compiledData.data_quality.model_predictions_available && (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cfe2ff", color: "#084298", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ ML Model Predictions
+                        </span>
+                      )}
+                      {analysis.compiledData.data_quality.market_odds_available ? (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#cce5ff", color: "#004085", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ Market Odds
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#fff3cd", color: "#856404", borderRadius: "4px", fontWeight: "600" }}>
+                          ⚠ No Market Odds
+                        </span>
+                      )}
+                      {analysis.compiledData.data_quality.injury_data_available ? (
+                        <span style={{ 
+                          fontSize: "11px", 
+                          padding: "4px 8px", 
+                          backgroundColor: analysis.compiledData.injuries.method === 'manual' ? "#e7f3ff" : "#d4edda", 
+                          color: analysis.compiledData.injuries.method === 'manual' ? "#0056b3" : "#155724", 
+                          borderRadius: "4px", 
+                          fontWeight: "600" 
+                        }}>
+                          {analysis.compiledData.injuries.method === 'manual' ? '📋 Manual Injury Scores' : '✓ Auto Injury Data'} 
+                          ({analysis.compiledData.injuries.source}) - 
+                          {analysis.compiledData.injuries.method === 'manual' 
+                            ? ` ${analysis.compiledData.injuries.net_differential_points.toFixed(1)} pt differential`
+                            : ` ${analysis.compiledData.injuries.home_injury_count + analysis.compiledData.injuries.away_injury_count} total`
+                          }
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#f8d7da", color: "#721c24", borderRadius: "4px", fontWeight: "600" }}>
+                          ✗ No Injury Data
+                        </span>
+                      )}
+                      {analysis.compiledData.data_quality.backend_enhanced && (
+                        <span style={{ fontSize: "11px", padding: "4px 8px", backgroundColor: "#e2e3e5", color: "#383d41", borderRadius: "4px", fontWeight: "600" }}>
+                          ✓ Enhanced Stats
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {analysis?.dataWarnings?.length > 0 && (
+                  <div style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                    <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "6px", color: "#856404" }}>
+                      Data Quality Warnings:
+                    </div>
+                    {analysis.dataWarnings.map((warning, idx) => (
+                      <div key={idx} style={{ fontSize: "11px", color: "#856404", marginBottom: "4px" }}>
+                        • {warning}
+                      </div>
+                    ))}
                   </div>
                 )}
                 
@@ -927,15 +1833,113 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                   </div>
                 )}
 
+                {analysis?.fantasyData && (analysis.fantasyData.home || analysis.fantasyData.away) && (
+                  <div style={{ marginTop: "20px", padding: "20px", backgroundColor: "#f0f8ff", borderRadius: "8px", border: "2px solid #0066cc" }}>
+                    <h3 style={{ margin: "0 0 15px 0", color: "#0066cc", fontSize: "18px" }}>
+                      Fantasy Football Projections (Opponent Adjusted)
+                    </h3>
+                    
+                    {[
+                      { label: game.away_team, data: analysis.fantasyData.away },
+                      { label: game.home_team, data: analysis.fantasyData.home }
+                    ].map(team => {
+                      if (!team.data) return null;
+                      
+                      return (
+                        <div key={team.label} style={{ marginBottom: "20px" }}>
+                          <h4 style={{ margin: "0 0 10px 0", fontSize: "14px", fontWeight: "600" }}>
+                            {team.label}
+                          </h4>
+                          
+                          {team.data.quarterbacks?.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Quarterbacks</div>
+                              {team.data.quarterbacks.map((qb, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{qb.name}</strong> - {qb.projectedPoints} pts ({qb.confidence})
+                                  {qb.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(qb.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(qb.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{qb.matchupAdjustment}x]
+                                    </span>
+                                  )}
+                                  <div style={{ color: "#666" }}>Pass: {qb.passYards} yds, {qb.passTDs} TDs | Rush: {qb.rushYards} yds</div>
+                                  {qb.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{qb.matchupNotes}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.runningBacks?.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Running Backs</div>
+                              {team.data.runningBacks.map((rb, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{rb.name}</strong> - {rb.projectedPoints} pts ({rb.confidence})
+                                  {rb.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(rb.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(rb.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{rb.matchupAdjustment}x]
+                                    </span>
+                                  )}
+                                  <div style={{ color: "#666" }}>Rush: {rb.rushYards} yds | Rec: {rb.receptions} rec, {rb.recYards} yds</div>
+                                  {rb.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{rb.matchupNotes}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {team.data.receivers?.length > 0 && (
+                            <div style={{ marginBottom: "10px" }}>
+                              <div style={{ fontSize: "12px", fontWeight: "600", marginBottom: "5px" }}>Receivers / Tight Ends</div>
+                              {team.data.receivers.map((rec, idx) => (
+                                <div key={idx} style={{ padding: "6px", backgroundColor: "white", borderRadius: "4px", marginBottom: "3px", fontSize: "11px" }}>
+                                  <strong>{rec.name}</strong> - {rec.projectedPoints} pts ({rec.confidence})
+                                  {rec.matchupAdjustment && (
+                                    <span style={{ color: parseFloat(rec.matchupAdjustment) > 1.05 ? "#28a745" : parseFloat(rec.matchupAdjustment) < 0.95 ? "#dc3545" : "#6c757d", fontWeight: "600", marginLeft: "5px" }}>
+                                      [{rec.matchupAdjustment}x]
+                                    </span>
+                                  )}
+                                  <div style={{ color: "#666" }}>{rec.receptions} rec, {rec.yards} yds, {rec.touchdowns} TDs</div>
+                                  {rec.matchupNotes && (
+                                    <div style={{ color: "#495057", fontSize: "10px", fontStyle: "italic" }}>{rec.matchupNotes}</div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <div style={{ marginTop: "15px", padding: "10px", backgroundColor: "#fff3cd", borderRadius: "4px", fontSize: "11px", color: "#856404" }}>
+                      <strong>Note:</strong> Fantasy projections adjusted for opponent defensive strength using EPA, success rate, and pressure data.
+                    </div>
+                  </div>
+                )}
+
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
-                    Analyzing game with ML model...
+                    <div style={{ marginBottom: "10px" }}>Step 1: Extracting statistics...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 2: Calling ML models...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 3: Fetching injury reports...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 4: Calculating adjustments...</div>
+                    <div>Step 5: Generating deep analysis...</div>
                   </div>
                 )}
               </div>
             </div>
           );
         })}
+
+        <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
+          <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
+          <p style={{ margin: 0, fontSize: "14px" }}>
+            v4.0: ML Models + AI Analysis + Fantasy + Manual Injury Input | Call 1-800-GAMBLER
+          </p>
+        </div>
       </div>
     </div>
   );
