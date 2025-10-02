@@ -215,40 +215,49 @@ export default function App() {
   };
 
   const fetchModelPredictions = async (features) => {
-    try {
-      addDebugLog('🔄 Fetching Python model predictions...');
-      
-      const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          feature_columns: Object.keys(features),
-          feature_values: features
-        })
-      });
+  try {
+    addDebugLog('🔄 Fetching Python model predictions...');
+    
+    // LOG WHAT WE'RE SENDING
+    console.log('=== SENDING TO MODEL ===');
+    console.log('Feature count:', Object.keys(features).length);
+    console.log('Feature names:', Object.keys(features));
+    console.log('First 10 features:', Object.fromEntries(Object.entries(features).slice(0, 10)));
+    
+    const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        feature_columns: Object.keys(features),
+        feature_values: features
+      })
+    });
 
-      if (!response.ok) {
-        addDebugLog('❌ Model prediction failed', response.status);
-        return null;
-      }
+    // LOG THE RESPONSE
+    const responseText = await response.text();
+    console.log('=== MODEL RESPONSE ===');
+    console.log('Status:', response.status);
+    console.log('Response:', responseText);
 
-      const result = await response.json();
-      
-      if (result.success) {
-        addDebugLog('✓ Model predictions received', {
-          spread: result.predictions.spread.value,
-          total: result.predictions.total.value,
-          win_prob: result.predictions.win_probability.home
-        });
-        return result.predictions;
-      }
-      
-      return null;
-    } catch (error) {
-      addDebugLog('❌ Model prediction error', error.message);
+    if (!response.ok) {
+      addDebugLog('❌ Model prediction failed', { status: response.status, error: responseText });
       return null;
     }
-  };
+
+    const result = JSON.parse(responseText);
+    
+    if (result.success) {
+      addDebugLog('✓ Model predictions received');
+      return result.predictions;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('MODEL ERROR:', error);
+    addDebugLog('❌ Model prediction error', error.message);
+    return null;
+  }
+};
 
   const systemPrompt = `You are an elite sports analyst integrating ML model predictions with contextual analysis.
 
