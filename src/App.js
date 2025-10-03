@@ -121,26 +121,79 @@ export default function App() {
     return fallbackMatch;
   };
 
+  const validateFeatureValues = (features) => {
+    const warnings = [];
+    const errors = [];
+    
+    // Check EPA values (should be -0.3 to +0.3 typically)
+    const epaFeatures = ['home_epa_overall', 'away_epa_overall', 'home_epa_pass', 'away_epa_pass', 'home_epa_rush', 'away_epa_rush'];
+    epaFeatures.forEach(key => {
+      if (Math.abs(features[key]) > 0.5) {
+        warnings.push(`${key} = ${features[key].toFixed(4)} (outside typical range -0.3 to +0.3)`);
+      }
+    });
+    
+    // Check success rates (should be 0 to 1)
+    const srFeatures = ['home_success_rate', 'away_success_rate'];
+    srFeatures.forEach(key => {
+      if (features[key] < 0 || features[key] > 1) {
+        errors.push(`${key} = ${features[key]} (must be between 0 and 1)`);
+      }
+    });
+    
+    // Check for NaN or undefined
+    Object.entries(features).forEach(([key, value]) => {
+      if (value === null || value === undefined || isNaN(value)) {
+        errors.push(`${key} is ${value} (invalid)`);
+      }
+    });
+    
+    return { warnings, errors, isValid: errors.length === 0 };
+  };
+
   const extractModelFeatures = (gameData) => {
     console.log('=== extractModelFeatures DEBUG START ===');
-    console.log('gameData:', gameData);
+    console.log('Full gameData structure:', JSON.stringify(gameData, null, 2));
     
     if (!gameData || !gameData.team_statistics) {
       console.error('extractModelFeatures: Missing gameData or team_statistics');
+      addDebugLog('❌ Missing team_statistics', { hasGameData: !!gameData });
       return null;
     }
 
     const homeTeam = gameData.teams?.home;
     const awayTeam = gameData.teams?.away;
+    
+    addDebugLog('📊 Extracting features', { homeTeam, awayTeam });
+    
     const homeStats = gameData.team_statistics?.[homeTeam];
     const awayStats = gameData.team_statistics?.[awayTeam];
 
     if (!homeStats || !awayStats) {
       console.error('extractModelFeatures: Missing team statistics');
+      addDebugLog('❌ Missing team stats', { 
+        homeTeam, 
+        awayTeam,
+        hasHomeStats: !!homeStats,
+        hasAwayStats: !!awayStats,
+        availableTeams: Object.keys(gameData.team_statistics || {})
+      });
       return null;
     }
 
-    // FIXED: Removed ALL _rolling suffixes to match new model (60 features)
+    // Log raw stat values for debugging
+    addDebugLog('Raw home stats sample', {
+      epa_overall: homeStats.offense?.epa_per_play?.overall,
+      success_rate: homeStats.offense?.success_rate?.overall,
+      explosive_rate: homeStats.offense?.explosive_play_share?.overall
+    });
+    
+    addDebugLog('Raw away stats sample', {
+      epa_overall: awayStats.offense?.epa_per_play?.overall,
+      success_rate: awayStats.offense?.success_rate?.overall,
+      explosive_rate: awayStats.offense?.explosive_play_share?.overall
+    });
+
     const features = {
       division_game: gameData.division_game || 0,
       home_field_advantage: 2.5,
@@ -152,7 +205,6 @@ export default function App() {
       home_win_prob_implied: gameData.home_win_prob_implied || 0.5,
       away_win_prob_implied: gameData.away_win_prob_implied || 0.5,
       
-      // Home features (NO _rolling suffix)
       home_epa_overall: homeStats.offense?.epa_per_play?.overall || 0,
       home_epa_pass: homeStats.offense?.epa_per_play?.pass || 0,
       home_epa_rush: homeStats.offense?.epa_per_play?.rush || 0,
@@ -171,7 +223,6 @@ export default function App() {
       home_neutral_script_epa: homeStats.offense?.epa_per_play?.overall || 0,
       home_play_count: homeStats.offense?.plays || 65,
       
-      // Away features (NO _rolling suffix)
       away_epa_overall: awayStats.offense?.epa_per_play?.overall || 0,
       away_epa_pass: awayStats.offense?.epa_per_play?.pass || 0,
       away_epa_rush: awayStats.offense?.epa_per_play?.rush || 0,
@@ -190,7 +241,6 @@ export default function App() {
       away_neutral_script_epa: awayStats.offense?.epa_per_play?.overall || 0,
       away_play_count: awayStats.offense?.plays || 65,
       
-      // Differentials
       epa_overall_differential: (homeStats.offense?.epa_per_play?.overall || 0) - (awayStats.offense?.epa_per_play?.overall || 0),
       epa_pass_differential: (homeStats.offense?.epa_per_play?.pass || 0) - (awayStats.offense?.epa_per_play?.pass || 0),
       epa_rush_differential: (homeStats.offense?.epa_per_play?.rush || 0) - (awayStats.offense?.epa_per_play?.rush || 0),
@@ -210,45 +260,109 @@ export default function App() {
       stuff_rate_differential: 0
     };
 
-    console.log('Features extracted. Count:', Object.keys(features).length);
+    // Validate features
+    const validation = validateFeatureValues(features);
+    
+    if (!validation.isValid) {
+      addDebugLog('❌ Feature validation errors', validation.errors);
+      console.error('Feature validation errors:', validation.errors);
+    }
+    
+    if (validation.warnings.length > 0) {
+      addDebugLog('⚠️ Feature validation warnings', validation.warnings);
+      console.warn('Feature validation warnings:', validation.warnings);
+    }
+
+    addDebugLog('✓ Features extracted', { 
+      count: Object.keys(features).length,
+      validationPassed: validation.isValid,
+      warningCount: validation.warnings.length
+    });
+
+    console.log('=== FEATURE SUMMARY ===');
+    console.log('Feature count:', Object.keys(features).length);
+    console.log('Key features:', {
+      home_epa_overall: features.home_epa_overall,
+      away_epa_overall: features.away_epa_overall,
+      epa_differential: features.epa_overall_differential,
+      home_success_rate: features.home_success_rate,
+      away_success_rate: features.away_success_rate
+    });
     console.log('=== extractModelFeatures DEBUG END ===');
 
-    return features;
+    return validation.isValid ? features : null;
   };
 
   const fetchModelPredictions = async (features) => {
     try {
-      addDebugLog('🔄 Fetching Python model predictions...');
+      addDebugLog('🔄 Sending to Python model...', {
+        featureCount: Object.keys(features).length,
+        firstFeature: Object.keys(features)[0],
+        lastFeature: Object.keys(features)[Object.keys(features).length - 1]
+      });
+      
+      const payload = {
+        feature_columns: Object.keys(features),
+        feature_values: features
+      };
+      
+      // Log first 5 and last 5 features for inspection
+      const featureKeys = Object.keys(features);
+      addDebugLog('Feature sample (first 5)', Object.fromEntries(
+        featureKeys.slice(0, 5).map(k => [k, features[k]])
+      ));
+      addDebugLog('Feature sample (last 5)', Object.fromEntries(
+        featureKeys.slice(-5).map(k => [k, features[k]])
+      ));
       
       const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          feature_columns: Object.keys(features),
-          feature_values: features
-        })
+        body: JSON.stringify(payload)
       });
 
+      const responseText = await response.text();
+      
       if (!response.ok) {
-        const errorText = await response.text();
-        addDebugLog('❌ Model prediction failed', { status: response.status, error: errorText });
+        addDebugLog('❌ Model API error', { 
+          status: response.status, 
+          response: responseText.substring(0, 200)
+        });
         return null;
       }
 
-      const result = await response.json();
+      const result = JSON.parse(responseText);
       
       if (result.success) {
         addDebugLog('✓ Model predictions received', {
           spread: result.predictions.spread.value,
           total: result.predictions.total.value,
-          win_prob: result.predictions.win_probability.home
+          home_win_prob: result.predictions.win_probability.home,
+          away_win_prob: result.predictions.win_probability.away
         });
+        
+        // Validate prediction consistency
+        const spreadAbs = Math.abs(result.predictions.spread.value);
+        const winProb = result.predictions.win_probability.home;
+        
+        if (spreadAbs > 20 && (winProb < 0.75 || winProb > 0.25)) {
+          addDebugLog('⚠️ INCONSISTENT PREDICTION', {
+            spread: result.predictions.spread.value,
+            winProb: winProb,
+            note: 'Large spread but close win probability suggests model error'
+          });
+        }
+        
         return result.predictions;
       }
       
+      addDebugLog('❌ Model returned failure', result);
       return null;
     } catch (error) {
-      addDebugLog('❌ Model prediction error', error.message);
+      addDebugLog('❌ Model prediction exception', { 
+        error: error.message,
+        stack: error.stack?.substring(0, 300)
+      });
       return null;
     }
   };
@@ -285,10 +399,26 @@ Synthesize all sources to provide superior predictions:
 4. **Contextual Factors**
    - Weather, rest, division games can override by 1-3 points
 
+=== CRITICAL: MODEL ERROR DETECTION ===
+
+**If you see any of these red flags, immediately flag as MODEL ERROR:**
+- Spread > 20 points with win probability < 75%
+- Spread < -20 points with win probability > 25%
+- Total < 30 or > 70 in NFL
+- EPA differentials don't support the spread magnitude
+- Internal contradictions between model components
+
+**When model error detected:**
+1. State clearly: "MODEL ERROR DETECTED"
+2. List specific inconsistencies
+3. Do NOT provide betting recommendations
+4. Suggest manual review of input data
+
 === OUTPUT STRUCTURE ===
 
 **1. Model Assessment**
-- Spread: [value] (SOLID confidence, R²: 0.237)
+- First check for model errors
+- Spread: [value] (confidence, R²: 0.237)
 - Total: [value] (LOW CONFIDENCE, R²: 0.001)
 - Win Prob: [home%]/[away%] (HIGH CONFIDENCE, 71% accuracy)
 
@@ -309,6 +439,7 @@ Synthesize all sources to provide superior predictions:
 **6. Final Recommendation**
 - Betting guidance (educational only)
 - Unit sizing (1-5 based on edge)
+- IF MODEL ERROR: Unit sizing = 0, DO NOT BET
 
 CRITICAL: Show all math, be honest about limitations, educational purposes only`;
 
@@ -908,10 +1039,12 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
     }
     
     let modelPredictions = null;
+    let extractedFeatures = null;
+    
     if (!isCFB && gameData.team_statistics) {
-      const features = extractModelFeatures(gameData);
-      if (features) {
-        modelPredictions = await fetchModelPredictions(features);
+      extractedFeatures = extractModelFeatures(gameData);
+      if (extractedFeatures) {
+        modelPredictions = await fetchModelPredictions(extractedFeatures);
       }
     }
     
@@ -944,6 +1077,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         available: false,
         reason: 'Model predictions not available for this game type'
       },
+      extracted_features: extractedFeatures,
       team_statistics: {},
       injuries: {
         available: !!(espnData && espnData.home && espnData.away && 
@@ -1453,7 +1587,8 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
           compiledData: compiledData,
           fantasyData: fantasyData,
           dataWarnings: dataWarnings,
-          modelPredictions: compiledData.model_predictions
+          modelPredictions: compiledData.model_predictions,
+          extractedFeatures: compiledData.extracted_features
         }
       })));
     } catch (err) {
@@ -1494,9 +1629,9 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
   return (
     <div style={{ minHeight: "100vh", backgroundColor: "#f5f5f5", padding: "20px", fontFamily: "system-ui" }}>
       <div style={{ maxWidth: "1400px", margin: "0 auto" }}>
-        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v4.0</h1>
+        <h1 style={{ textAlign: "center", marginBottom: "10px" }}>Enhanced Sports Analytics System v4.1</h1>
         <p style={{ textAlign: "center", color: "#666", marginBottom: "30px" }}>
-          ML Model Integration + Deep Analysis + Manual Injury Input + Fantasy Projections
+          ML Model Integration + Deep Analysis + Manual Injury Input + Fantasy Projections + DEBUG MODE
         </p>
 
         <div style={{ backgroundColor: "white", padding: "20px", borderRadius: "8px", marginBottom: "20px" }}>
@@ -1588,7 +1723,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         {debugLog.length > 0 && (
           <div style={{ backgroundColor: "white", padding: "15px", borderRadius: "8px", marginBottom: "20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-              <h3 style={{ margin: 0, fontSize: "14px", fontWeight: "600" }}>Debug Log</h3>
+              <h3 style={{ margin: 0, fontSize: "14px", fontWeight: "600" }}>Debug Log (Enhanced)</h3>
               <button 
                 onClick={() => setDebugLog([])}
                 style={{ padding: "4px 8px", fontSize: "11px", backgroundColor: "#dc3545", color: "white", border: "none", borderRadius: "4px", cursor: "pointer" }}
@@ -1596,10 +1731,15 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                 Clear
               </button>
             </div>
-            <div style={{ maxHeight: "200px", overflowY: "auto", fontSize: "11px", fontFamily: "monospace", backgroundColor: "#f8f9fa", padding: "10px", borderRadius: "4px" }}>
+            <div style={{ maxHeight: "300px", overflowY: "auto", fontSize: "11px", fontFamily: "monospace", backgroundColor: "#f8f9fa", padding: "10px", borderRadius: "4px" }}>
               {debugLog.map((log, idx) => (
-                <div key={idx} style={{ marginBottom: "4px", color: log.message.startsWith('❌') ? '#dc3545' : log.message.startsWith('✓') ? '#28a745' : '#666' }}>
+                <div key={idx} style={{ marginBottom: "4px", color: log.message.startsWith('❌') ? '#dc3545' : log.message.startsWith('✓') ? '#28a745' : log.message.startsWith('⚠️') ? '#fd7e14' : '#666' }}>
                   [{log.timestamp}] {log.message}
+                  {log.data && (
+                    <div style={{ paddingLeft: "20px", fontSize: "10px", color: "#495057" }}>
+                      {JSON.stringify(log.data).substring(0, 200)}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1723,6 +1863,19 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
               </div>
 
               <div style={{ padding: "15px" }}>
+                {analysis?.extractedFeatures && (
+                  <details style={{ marginBottom: "15px", padding: "12px", backgroundColor: "#fff3cd", borderRadius: "6px", border: "1px solid #ffc107" }}>
+                    <summary style={{ cursor: "pointer", fontWeight: "600", color: "#856404", fontSize: "12px" }}>
+                      🔍 View Extracted Features (DEBUG - Click to expand)
+                    </summary>
+                    <div style={{ marginTop: "10px", fontSize: "10px", fontFamily: "monospace", maxHeight: "300px", overflowY: "auto", backgroundColor: "white", padding: "10px", borderRadius: "4px" }}>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                        {JSON.stringify(analysis.extractedFeatures, null, 2)}
+                      </pre>
+                    </div>
+                  </details>
+                )}
+
                 {analysis?.modelPredictions?.available && (
                   <div style={{ padding: "15px", backgroundColor: "#e3f2fd", borderRadius: "6px", marginBottom: "15px", border: "2px solid #1976d2" }}>
                     <h4 style={{ margin: "0 0 10px 0", color: "#1976d2" }}>
@@ -1923,10 +2076,11 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                 {analysis?.loading && (
                   <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
                     <div style={{ marginBottom: "10px" }}>Step 1: Extracting statistics...</div>
-                    <div style={{ marginBottom: "10px" }}>Step 2: Calling ML models...</div>
-                    <div style={{ marginBottom: "10px" }}>Step 3: Fetching injury reports...</div>
-                    <div style={{ marginBottom: "10px" }}>Step 4: Calculating adjustments...</div>
-                    <div>Step 5: Generating deep analysis...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 2: Validating features...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 3: Calling ML models...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 4: Fetching injury reports...</div>
+                    <div style={{ marginBottom: "10px" }}>Step 5: Calculating adjustments...</div>
+                    <div>Step 6: Generating deep analysis...</div>
                   </div>
                 )}
               </div>
@@ -1937,7 +2091,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
         <div style={{ marginTop: "30px", padding: "20px", backgroundColor: "#dc3545", color: "white", borderRadius: "8px", textAlign: "center" }}>
           <h3 style={{ margin: "0 0 10px 0" }}>Educational & Fantasy Only</h3>
           <p style={{ margin: 0, fontSize: "14px" }}>
-            v4.0: ML Models + AI Analysis + Fantasy + Manual Injury Input | Call 1-800-GAMBLER
+            v4.1: ML Models + AI Analysis + Fantasy + Manual Injury Input + Enhanced Debugging | Call 1-800-GAMBLER
           </p>
         </div>
       </div>
