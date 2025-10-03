@@ -121,12 +121,9 @@ export default function App() {
     return fallbackMatch;
   };
 
-  // FIXED: Removed 4 features not in model (short_week, weather_impact, home_win_prob_implied, away_win_prob_implied)
   const extractModelFeatures = (gameData) => {
     console.log('=== extractModelFeatures DEBUG START ===');
     console.log('gameData:', gameData);
-    console.log('gameData.team_statistics:', gameData?.team_statistics);
-    console.log('gameData.teams:', gameData?.teams);
     
     if (!gameData || !gameData.team_statistics) {
       console.error('extractModelFeatures: Missing gameData or team_statistics');
@@ -135,65 +132,65 @@ export default function App() {
 
     const homeTeam = gameData.teams?.home;
     const awayTeam = gameData.teams?.away;
-    
-    console.log('Teams:', { homeTeam, awayTeam });
-    
     const homeStats = gameData.team_statistics?.[homeTeam];
     const awayStats = gameData.team_statistics?.[awayTeam];
-    
-    console.log('Home stats structure:', homeStats);
-    console.log('Away stats structure:', awayStats);
 
     if (!homeStats || !awayStats) {
       console.error('extractModelFeatures: Missing team statistics');
       return null;
     }
 
-    // NOW 51 FEATURES (removed short_week, weather_impact, home_win_prob_implied, away_win_prob_implied)
+    // FIXED: Removed ALL _rolling suffixes to match new model (60 features)
     const features = {
       division_game: gameData.division_game || 0,
       home_field_advantage: 2.5,
-      short_week: 0, 
+      short_week: 0,
       weather_impact: 0,
       rest_days: 7,
       spread_line: gameData.spread_line || 0,
       total_line: gameData.total_line || 0,
       home_win_prob_implied: gameData.home_win_prob_implied || 0.5,
       away_win_prob_implied: gameData.away_win_prob_implied || 0.5,
-      home_epa_overall_rolling: homeStats.offense?.epa_per_play?.overall || 0,
-      home_epa_pass_rolling: homeStats.offense?.epa_per_play?.pass || 0,
-      home_epa_rush_rolling: homeStats.offense?.epa_per_play?.rush || 0,
-      home_success_rate_rolling: homeStats.offense?.success_rate?.overall || 0,
-      home_early_down_pass_sr_rolling: homeStats.offense?.success_rate?.early || 0,
-      home_early_down_pass_epa_rolling: homeStats.offense?.epa_per_play?.pass || 0,
-      home_explosive_rate_rolling: homeStats.offense?.explosive_play_share?.overall || 0,
-      home_yards_after_catch_rolling: 5.0,
-      home_third_down_rate_rolling: homeStats.offense?.third_down?.overall || 0,
-      home_redzone_td_rate_rolling: homeStats.offense?.red_zone?.td_rate || 0,
-      home_turnover_diff_rolling: 0,
-      home_pressure_rate_rolling: homeStats.defense?.pressure_rate_generated || 0,
-      home_def_epa_allowed_rolling: homeStats.defense?.epa_per_play_allowed?.overall || 0,
-      home_def_success_rate_allowed_rolling: homeStats.defense?.success_rate_allowed?.overall || 0,
-      home_stuff_rate_rolling: 0,
-      home_neutral_script_epa_rolling: homeStats.offense?.epa_per_play?.overall || 0,
-      home_play_count_rolling: homeStats.offense?.plays || 65,
-      away_epa_overall_rolling: awayStats.offense?.epa_per_play?.overall || 0,
-      away_epa_pass_rolling: awayStats.offense?.epa_per_play?.pass || 0,
-      away_epa_rush_rolling: awayStats.offense?.epa_per_play?.rush || 0,
-      away_success_rate_rolling: awayStats.offense?.success_rate?.overall || 0,
-      away_early_down_pass_sr_rolling: awayStats.offense?.success_rate?.early || 0,
-      away_early_down_pass_epa_rolling: awayStats.offense?.epa_per_play?.pass || 0,
-      away_explosive_rate_rolling: awayStats.offense?.explosive_play_share?.overall || 0,
-      away_yards_after_catch_rolling: 5.0,
-      away_third_down_rate_rolling: awayStats.offense?.third_down?.overall || 0,
-      away_redzone_td_rate_rolling: awayStats.offense?.red_zone?.td_rate || 0,
-      away_turnover_diff_rolling: 0,
-      away_pressure_rate_rolling: awayStats.defense?.pressure_rate_generated || 0,
-      away_def_epa_allowed_rolling: awayStats.defense?.epa_per_play_allowed?.overall || 0,
-      away_def_success_rate_allowed_rolling: awayStats.defense?.success_rate_allowed?.overall || 0,
-      away_stuff_rate_rolling: 0,
-      away_neutral_script_epa_rolling: awayStats.offense?.epa_per_play?.overall || 0,
-      away_play_count_rolling: awayStats.offense?.plays || 65,
+      
+      // Home features (NO _rolling suffix)
+      home_epa_overall: homeStats.offense?.epa_per_play?.overall || 0,
+      home_epa_pass: homeStats.offense?.epa_per_play?.pass || 0,
+      home_epa_rush: homeStats.offense?.epa_per_play?.rush || 0,
+      home_success_rate: homeStats.offense?.success_rate?.overall || 0,
+      home_early_down_pass_sr: homeStats.offense?.success_rate?.early || 0,
+      home_early_down_pass_epa: homeStats.offense?.epa_per_play?.pass || 0,
+      home_explosive_rate: homeStats.offense?.explosive_play_share?.overall || 0,
+      home_yards_after_catch: 5.0,
+      home_third_down_rate: homeStats.offense?.third_down?.overall || 0,
+      home_redzone_td_rate: homeStats.offense?.red_zone?.td_rate || 0,
+      home_turnover_diff: 0,
+      home_pressure_rate: homeStats.defense?.pressure_rate_generated || 0,
+      home_def_epa_allowed: homeStats.defense?.epa_per_play_allowed?.overall || 0,
+      home_def_success_rate_allowed: homeStats.defense?.success_rate_allowed?.overall || 0,
+      home_stuff_rate: 0,
+      home_neutral_script_epa: homeStats.offense?.epa_per_play?.overall || 0,
+      home_play_count: homeStats.offense?.plays || 65,
+      
+      // Away features (NO _rolling suffix)
+      away_epa_overall: awayStats.offense?.epa_per_play?.overall || 0,
+      away_epa_pass: awayStats.offense?.epa_per_play?.pass || 0,
+      away_epa_rush: awayStats.offense?.epa_per_play?.rush || 0,
+      away_success_rate: awayStats.offense?.success_rate?.overall || 0,
+      away_early_down_pass_sr: awayStats.offense?.success_rate?.early || 0,
+      away_early_down_pass_epa: awayStats.offense?.epa_per_play?.pass || 0,
+      away_explosive_rate: awayStats.offense?.explosive_play_share?.overall || 0,
+      away_yards_after_catch: 5.0,
+      away_third_down_rate: awayStats.offense?.third_down?.overall || 0,
+      away_redzone_td_rate: awayStats.offense?.red_zone?.td_rate || 0,
+      away_turnover_diff: 0,
+      away_pressure_rate: awayStats.defense?.pressure_rate_generated || 0,
+      away_def_epa_allowed: awayStats.defense?.epa_per_play_allowed?.overall || 0,
+      away_def_success_rate_allowed: awayStats.defense?.success_rate_allowed?.overall || 0,
+      away_stuff_rate: 0,
+      away_neutral_script_epa: awayStats.offense?.epa_per_play?.overall || 0,
+      away_play_count: awayStats.offense?.plays || 65,
+      
+      // Differentials
       epa_overall_differential: (homeStats.offense?.epa_per_play?.overall || 0) - (awayStats.offense?.epa_per_play?.overall || 0),
       epa_pass_differential: (homeStats.offense?.epa_per_play?.pass || 0) - (awayStats.offense?.epa_per_play?.pass || 0),
       epa_rush_differential: (homeStats.offense?.epa_per_play?.rush || 0) - (awayStats.offense?.epa_per_play?.rush || 0),
@@ -205,72 +202,65 @@ export default function App() {
       turnover_diff_differential: 0,
       pressure_rate_differential: (homeStats.defense?.pressure_rate_generated || 0) - (awayStats.defense?.pressure_rate_generated || 0),
       def_epa_allowed_differential: (homeStats.defense?.epa_per_play_allowed?.overall || 0) - (awayStats.defense?.epa_per_play_allowed?.overall || 0),
-      neutral_script_epa_differential: (homeStats.offense?.epa_per_play?.overall || 0) - (awayStats.offense?.epa_per_play?.overall || 0)
+      neutral_script_epa_differential: (homeStats.offense?.epa_per_play?.overall || 0) - (awayStats.offense?.epa_per_play?.overall || 0),
+      early_down_pass_epa_differential: (homeStats.offense?.epa_per_play?.pass || 0) - (awayStats.offense?.epa_per_play?.pass || 0),
+      yards_after_catch_differential: 0,
+      play_count_differential: 0,
+      def_success_rate_allowed_differential: (homeStats.defense?.success_rate_allowed?.overall || 0) - (awayStats.defense?.success_rate_allowed?.overall || 0),
+      stuff_rate_differential: 0
     };
 
     console.log('Features extracted. Count:', Object.keys(features).length);
-    console.log('Sample features:', {
-      home_epa: features.home_epa_overall_rolling,
-      away_epa: features.away_epa_overall_rolling
-    });
     console.log('=== extractModelFeatures DEBUG END ===');
 
     return features;
   };
 
   const fetchModelPredictions = async (features) => {
-  try {
-    addDebugLog('🔄 Fetching Python model predictions...');
-    
-    // LOG WHAT WE'RE SENDING
-    console.log('=== SENDING TO MODEL ===');
-    console.log('Feature count:', Object.keys(features).length);
-    console.log('Feature names:', Object.keys(features));
-    console.log('First 10 features:', Object.fromEntries(Object.entries(features).slice(0, 10)));
-    
-    const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        feature_columns: Object.keys(features),
-        feature_values: features
-      })
-    });
+    try {
+      addDebugLog('🔄 Fetching Python model predictions...');
+      
+      const response = await fetch(`${MODEL_API_URL}/api/nfl-model-predict`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          feature_columns: Object.keys(features),
+          feature_values: features
+        })
+      });
 
-    // LOG THE RESPONSE
-    const responseText = await response.text();
-    console.log('=== MODEL RESPONSE ===');
-    console.log('Status:', response.status);
-    console.log('Response:', responseText);
+      if (!response.ok) {
+        const errorText = await response.text();
+        addDebugLog('❌ Model prediction failed', { status: response.status, error: errorText });
+        return null;
+      }
 
-    if (!response.ok) {
-      addDebugLog('❌ Model prediction failed', { status: response.status, error: responseText });
+      const result = await response.json();
+      
+      if (result.success) {
+        addDebugLog('✓ Model predictions received', {
+          spread: result.predictions.spread.value,
+          total: result.predictions.total.value,
+          win_prob: result.predictions.win_probability.home
+        });
+        return result.predictions;
+      }
+      
+      return null;
+    } catch (error) {
+      addDebugLog('❌ Model prediction error', error.message);
       return null;
     }
-
-    const result = JSON.parse(responseText);
-    
-    if (result.success) {
-      addDebugLog('✓ Model predictions received');
-      return result.predictions;
-    }
-    
-    return null;
-  } catch (error) {
-    console.error('MODEL ERROR:', error);
-    addDebugLog('❌ Model prediction error', error.message);
-    return null;
-  }
-};
+  };
 
   const systemPrompt = `You are an elite sports analyst integrating ML model predictions with contextual analysis.
 
 === DATA SOURCES ===
 
-1. **Python ML Models** (Trained on 2021-2024 NFL data)
-   - Spread Model: Ridge Regression (R² = 0.156, moderate reliability)
-   - Total Model: XGBoost (R² = -0.099, use with caution)
-   - Win Probability: Calibrated Logistic (62.5% validation accuracy, HIGH reliability)
+1. **Python ML Models** (Trained on 2015-2023 NFL data, validated on 2024)
+   - Spread Model: Ridge Regression (R² = 0.237, GOOD reliability)
+   - Total Model: XGBoost (R² = 0.001, LOW reliability)
+   - Win Probability: Calibrated Logistic (71% validation accuracy, HIGH reliability)
 
 2. **Statistical Data**: EPA, success rates, efficiency metrics
 3. **Contextual Data**: Injuries, weather, rest, motivation
@@ -280,9 +270,9 @@ export default function App() {
 Synthesize all sources to provide superior predictions:
 
 1. **Start with Model Baseline**
-   - Spread: Use as statistical starting point (moderate confidence)
-   - Win Probability: TRUST THIS (62.5% accuracy, well-calibrated)
-   - Total: Use skeptically (negative R², often wrong)
+   - Spread: TRUST THIS (R² = 0.237, solid predictor)
+   - Win Probability: HIGHLY RELIABLE (71% accuracy, well-calibrated)
+   - Total: Use skeptically (R² ~0, often wrong)
 
 2. **Apply Injury Adjustments**
    - Adjust model spread by injury differential
@@ -298,9 +288,9 @@ Synthesize all sources to provide superior predictions:
 === OUTPUT STRUCTURE ===
 
 **1. Model Assessment**
-- Spread: [value] (confidence, R²: 0.156)
-- Total: [value] (LOW CONFIDENCE, R²: -0.099)
-- Win Prob: [home%]/[away%] (HIGH CONFIDENCE, 62.5% accuracy)
+- Spread: [value] (SOLID confidence, R²: 0.237)
+- Total: [value] (LOW CONFIDENCE, R²: 0.001)
+- Win Prob: [home%]/[away%] (HIGH CONFIDENCE, 71% accuracy)
 
 **2. Model vs Market** (if available)
 - Show divergence, explain why
@@ -1392,7 +1382,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
       
       if (compiledData.model_predictions?.available) {
         prompt += "=== PYTHON ML MODEL PREDICTIONS ===\n";
-        prompt += `Trained on 2021-2024 data, validated on 2024 season\n\n`;
+        prompt += `Trained on 2015-2023 data, validated on 2024 season\n\n`;
         prompt += `**Spread:**\n`;
         prompt += `- Model: Home ${compiledData.model_predictions.spread.value > 0 ? 'favored by' : 'underdog by'} ${Math.abs(compiledData.model_predictions.spread.value).toFixed(1)} points\n`;
         prompt += `- Confidence: ${compiledData.model_predictions.spread.confidence} (R² = ${compiledData.model_predictions.spread.model_r2})\n\n`;
@@ -1736,7 +1726,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                 {analysis?.modelPredictions?.available && (
                   <div style={{ padding: "15px", backgroundColor: "#e3f2fd", borderRadius: "6px", marginBottom: "15px", border: "2px solid #1976d2" }}>
                     <h4 style={{ margin: "0 0 10px 0", color: "#1976d2" }}>
-                      🤖 Python ML Model Predictions (Trained 2021-2024)
+                      🤖 Python ML Model Predictions (Trained 2015-2023)
                     </h4>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "15px" }}>
                       <div>
@@ -1764,7 +1754,7 @@ CRITICAL: Show all math, be honest about limitations, educational purposes only`
                           Away: <strong>{(analysis.modelPredictions.win_probability.away * 100).toFixed(1)}%</strong>
                         </p>
                         <p style={{ margin: 0, fontSize: "11px", color: "#28a745" }}>
-                          ✓ 62.5% validation accuracy
+                          ✓ 71% validation accuracy
                         </p>
                       </div>
                     </div>
